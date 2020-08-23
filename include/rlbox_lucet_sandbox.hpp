@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lucet_sandbox.h"
+#include "trampoline.h"
 
 #include <cstdint>
 #include <iostream>
@@ -12,6 +13,7 @@
 #ifndef RLBOX_USE_CUSTOM_SHARED_LOCK
 #  include <shared_mutex>
 #endif
+#include <string.h>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -214,7 +216,7 @@ struct rlbox_lucet_sandbox_thread_data
 rlbox_lucet_sandbox_thread_data* get_rlbox_lucet_sandbox_thread_data();
 #  define RLBOX_LUCET_SANDBOX_STATIC_VARIABLES()                               \
     thread_local rlbox::rlbox_lucet_sandbox_thread_data                        \
-      rlbox_lucet_sandbox_thread_info{ 0, 0 };                                 \
+      rlbox_lucet_sandbox_thread_info{ 0, 0 };                           \
     namespace rlbox {                                                          \
       rlbox_lucet_sandbox_thread_data* get_rlbox_lucet_sandbox_thread_data()   \
       {                                                                        \
@@ -275,8 +277,7 @@ private:
     saved_callback_slot_info;
 
 #ifndef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
-  thread_local static inline rlbox_lucet_sandbox_thread_data thread_data{ 0,
-                                                                          0 };
+  thread_local static inline rlbox_lucet_sandbox_thread_data thread_data{ 0, 0 };
 #endif
 
   template<typename T_FormalRet, typename T_ActualRet>
@@ -378,6 +379,7 @@ private:
     void* /* vmContext */,
     typename lucet_detail::convert_type_to_wasm_type<T_Args>::type... params)
   {
+    sandbox_current_thread_sbx_ctx->rip = get_return_target();
 #ifdef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
 #endif
@@ -391,7 +393,15 @@ private:
     // Callbacks are invoked through function pointers, cannot use std::forward
     // as we don't have caller context for T_Args, which means they are all
     // effectively passed by value
-    return func(thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
+    if constexpr (std::is_void_v<T_Ret>) {
+      func(thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
+      set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
+    } else {
+      auto ret = func(thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
+      push_return(ret);
+      set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
+      return ret;
+    }
   }
 
   template<uint32_t N, typename T_Ret, typename... T_Args>
@@ -400,6 +410,7 @@ private:
     typename lucet_detail::convert_type_to_wasm_type<T_Ret>::type ret,
     typename lucet_detail::convert_type_to_wasm_type<T_Args>::type... params)
   {
+    sandbox_current_thread_sbx_ctx->rip = get_return_target();
 #ifdef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
 #endif
@@ -419,6 +430,8 @@ private:
     auto ret_ptr = reinterpret_cast<T_Ret*>(
       thread_data.sandbox->template impl_get_unsandboxed_pointer<T_Ret*>(ret));
     *ret_ptr = ret_val;
+    push_return(ret_ptr);
+    set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
   }
 
   template<typename T_Ret, typename... T_Args>
@@ -467,6 +480,93 @@ private:
         return_slot != 0,
         "Error initializing return slot. Sandbox may be out of memory!");
       return_slot_size = size;
+    }
+  }
+
+  template<typename T_Arg>
+  static inline uint64_t serialize_to_uint64(T_Arg arg) {
+    uint64_t val = 0;
+    // memcpy will be removed by any decent compiler
+    if constexpr(sizeof(T_Arg) == 8) {
+      memcpy(&val, &arg, sizeof(T_Arg));
+    } else if constexpr(sizeof(T_Arg) == 4){
+      uint32_t tmp = 0;
+      memcpy(&tmp , &arg, sizeof(T_Arg));
+      val = tmp;
+    }
+    return val;
+  }
+
+  template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret, typename... T_FormalArgs, typename... T_ActualArgs>
+  static inline void push_parameters(T_Ret(*)(T_FormalArgs...), T_ActualArgs&&...) {}
+
+  template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret, typename T_FormalArg, typename... T_FormalArgs, typename T_ActualArg, typename... T_ActualArgs>
+  static inline void push_parameters(T_Ret(*)(T_FormalArg, T_FormalArgs...), T_ActualArg&& arg, T_ActualArgs&&... args) {
+    T_FormalArg arg_conv = arg;
+    if constexpr (
+      (std::is_integral_v<T_FormalArg> || std::is_pointer_v<T_FormalArg> || std::is_reference_v<T_FormalArg>) &&
+      T_IntegerNum < 6
+    ) {
+      uint64_t val = serialize_to_uint64(arg_conv);
+
+      if constexpr (T_IntegerNum == 0) {
+        sandbox_current_thread_sbx_ctx->rdi = val;
+      } else if constexpr (T_IntegerNum == 1) {
+        sandbox_current_thread_sbx_ctx->rsi = val;
+      } else if constexpr (T_IntegerNum == 2) {
+        sandbox_current_thread_sbx_ctx->rdx = val;
+      } else if constexpr (T_IntegerNum == 3) {
+        sandbox_current_thread_sbx_ctx->rcx = val;
+      } else if constexpr (T_IntegerNum == 4) {
+        sandbox_current_thread_sbx_ctx->r8 = val;
+      } else if constexpr (T_IntegerNum == 5) {
+        sandbox_current_thread_sbx_ctx->r9 = val;
+      }
+
+      push_parameters<T_IntegerNum + 1, T_FloatNum>(reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0), std::forward<T_ActualArgs>(args)...);
+
+    } else if constexpr (
+      (std::is_same_v<T_FormalArg, float> || std::is_same_v<T_FormalArg, double>) &&
+      T_FloatNum < 8
+    ) {
+      uint64_t val = serialize_to_uint64(arg_conv);
+
+      if constexpr (T_FloatNum == 0) {
+        sandbox_current_thread_sbx_ctx->xmm0 = val;
+      } else if constexpr (T_FloatNum == 1) {
+        sandbox_current_thread_sbx_ctx->xmm1 = val;
+      } else if constexpr (T_FloatNum == 2) {
+        sandbox_current_thread_sbx_ctx->xmm2 = val;
+      } else if constexpr (T_FloatNum == 3) {
+        sandbox_current_thread_sbx_ctx->xmm3 = val;
+      } else if constexpr (T_FloatNum == 4) {
+        sandbox_current_thread_sbx_ctx->xmm4 = val;
+      } else if constexpr (T_FloatNum == 5) {
+        sandbox_current_thread_sbx_ctx->xmm5 = val;
+      } else if constexpr (T_FloatNum == 6) {
+        sandbox_current_thread_sbx_ctx->xmm6 = val;
+      } else if constexpr (T_FloatNum == 7) {
+        sandbox_current_thread_sbx_ctx->xmm7 = val;
+      }
+
+      push_parameters<T_IntegerNum, T_FloatNum + 1>(reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0), std::forward<T_ActualArgs>(args)...);
+    } else {
+      static_assert(lucet_detail::false_v<T_FormalArg>,
+        "Function with more than 6 integer params or 8 float params need stack"
+        "arguments but stack arguments haver not been implemented by rlbox_lucet.");
+    }
+  }
+
+  template<typename T_Ret>
+  static inline void push_return(T_Ret ret) {
+    if constexpr (std::is_integral_v<T_Ret> || std::is_pointer_v<T_Ret>) {
+      uint64_t val = serialize_to_uint64(ret);
+      sandbox_current_thread_sbx_ctx->rax = val;
+    } else if constexpr (std::is_same_v<T_Ret, float> || std::is_same_v<T_Ret, double>) {
+      uint64_t val = serialize_to_uint64(ret);
+      sandbox_current_thread_sbx_ctx->xmm0 = val;
+    } else {
+      static_assert(lucet_detail::false_v<T_Ret>, "WASM should not have class returns");
     }
   }
 
@@ -690,6 +790,14 @@ protected:
       return ret;
     }
 
+    sandbox_thread_ctx app_ctx {0};
+    sandbox_thread_ctx sbx_ctx {0};
+    sbx_ctx.mxcsr = 0x1f80;
+    sandbox_thread_ctx* old_app_ctx = sandbox_current_thread_app_ctx;
+    sandbox_thread_ctx* old_sbx_ctx = sandbox_current_thread_sbx_ctx;
+    sandbox_current_thread_app_ctx = &app_ctx;
+    sandbox_current_thread_sbx_ctx = &sbx_ctx;
+
     // Handle point 4
     constexpr size_t alloc_length = [&] {
       if constexpr (sizeof...(params) > 0) {
@@ -733,21 +841,30 @@ protected:
     // Function invocation
     auto func_ptr_conv =
       reinterpret_cast<T_ConvHeap*>(reinterpret_cast<uintptr_t>(func_ptr));
+    auto context_switcher =
+      reinterpret_cast<T_ConvHeap*>(reinterpret_cast<uintptr_t>(context_switch_to_sbx_func));
 
     using T_NoVoidRet =
       std::conditional_t<std::is_void_v<T_Ret>, uint32_t, T_Ret>;
     T_NoVoidRet ret;
 
+    sandbox_current_thread_sbx_ctx->rip = reinterpret_cast<uint64_t>(func_ptr_conv);
+
+    push_parameters<0, 0>(func_ptr_conv, heap_base, serialize_class_arg(params)...);
+
     if constexpr (std::is_void_v<T_Ret>) {
       RLBOX_LUCET_UNUSED(ret);
-      func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      context_switcher(heap_base, serialize_class_arg(params)...);
     } else {
-      ret = func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      ret = context_switcher(heap_base, serialize_class_arg(params)...);
     }
 
     for (size_t i = 0; i < alloc_length; i++) {
       impl_free_in_sandbox(allocations_buff[i]);
     }
+
+    sandbox_current_thread_app_ctx = old_app_ctx;
+    sandbox_current_thread_sbx_ctx = old_sbx_ctx;
 
     if constexpr (!std::is_void_v<T_Ret>) {
       return ret;
