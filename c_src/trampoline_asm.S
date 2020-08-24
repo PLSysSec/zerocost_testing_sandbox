@@ -9,6 +9,12 @@ _context_switch_to_sbx_func:
         movq    sandbox_current_thread_app_ctx@GOTTPOFF(%rip), %r11
         movq    %fs:(%r11), %r11
 
+        // Save the return address of the app and set the return of the trampoline
+        movq    0x0(%rsp), %rax
+        movq    %rax, 0xb8(%r11)
+        leaq    post_call(%rip), %rax
+        movq    %rax, 0x0(%rsp)
+
         /* Callee save registers */
         movq    %rbx, 0x00(%r11)
         movq    %rbp, 0x08(%r11)
@@ -64,18 +70,11 @@ _context_switch_to_sbx_func:
         movsd   0xa8(%r11), %xmm6
         movsd   0xb0(%r11), %xmm7
 
-        // Same trampoline is also used to re-enter after a callback so load return registers
-        movq    0xc0(%r11), %rax
-
         // Move the target into r11
         movq    0xb8(%r11), %r11
-        //Stack align should be 16 on a call, push some dummy data on the stack
-        push %r11
-        // we don't have to clear r11 as this only contains a pointer to the sandbox function, this is not a data leak
-        call    *%r11
-        pop %r11
+        jmp     *%r11
 
-
+post_call:
         // retrieve the contexts as we can't trust the current state of registers
         movq    sandbox_current_thread_app_ctx@GOTTPOFF(%rip), %r11
         movq    %fs:(%r11), %r11
@@ -89,7 +88,10 @@ _context_switch_to_sbx_func:
         movq    0x28(%r11), %r15
         fldcw   0x68(%r11)
         ldmxcsr 0x70(%r11)
-        ret
+
+        // restore the return address
+        movq    0xb8(%r11), %r11
+        jmp     *%r11
 
 .globl context_switch_to_sbx_callback
 .type context_switch_to_sbx_callback,@function

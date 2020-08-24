@@ -551,9 +551,7 @@ private:
 
       push_parameters<T_IntegerNum, T_FloatNum + 1>(reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0), std::forward<T_ActualArgs>(args)...);
     } else {
-      static_assert(lucet_detail::false_v<T_FormalArg>,
-        "Function with more than 6 integer params or 8 float params need stack"
-        "arguments but stack arguments haver not been implemented by rlbox_lucet.");
+      // This is handled natively by the os calling convention
     }
   }
 
