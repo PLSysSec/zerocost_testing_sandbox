@@ -38,8 +38,8 @@ typedef struct {
     uint64_t rax;
 } sandbox_thread_ctx;
 
-extern __thread sandbox_thread_ctx* sandbox_current_thread_app_ctx;
-extern __thread sandbox_thread_ctx* sandbox_current_thread_sbx_ctx;
+// extern __thread sandbox_thread_ctx* sandbox_current_thread_app_ctx;
+// extern __thread sandbox_thread_ctx* sandbox_current_thread_sbx_ctx;
 
 void context_switch_to_sbx_func();
 void context_switch_to_sbx_callback();

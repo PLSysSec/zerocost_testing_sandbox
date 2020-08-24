@@ -6,8 +6,8 @@
 .align 16
 context_switch_to_sbx_func:
 _context_switch_to_sbx_func:
-        movq    sandbox_current_thread_app_ctx@GOTTPOFF(%rip), %r11
-        movq    %fs:(%r11), %r11
+        call    get_sandbox_current_thread_app_ctx@PLT
+        movq    0x0(%rax), %r11
 
         // Save the return address of the app and set the return of the trampoline
         movq    0x0(%rsp), %rax
@@ -31,6 +31,9 @@ _context_switch_to_sbx_func:
          */
         stmxcsr 0x70(%r11)
 
+        call    get_sandbox_current_thread_sbx_ctx@PLT
+        movq    0x0(%rax), %r11
+
         // Clear scratch gpr registers to prevents leaks */
         xor    %rax, %rax
         xor    %rbx, %rbx
@@ -43,9 +46,6 @@ _context_switch_to_sbx_func:
         fxrstor fxrstor_default_state(%rip)
         /* Clear the AVX state that the "fxrstor" instruction doesn't cover. */
         vzeroupper
-
-        movq    sandbox_current_thread_sbx_ctx@GOTTPOFF(%rip), %r11
-        movq    %fs:(%r11), %r11
 
         // Restore the untrusted code's x87 and SSE control words.
         fldcw   0x68(%r11)
@@ -75,9 +75,13 @@ _context_switch_to_sbx_func:
         jmp     *%r11
 
 post_call:
+        // save the return value
+        movq    %rax, %r15
         // retrieve the contexts as we can't trust the current state of registers
-        movq    sandbox_current_thread_app_ctx@GOTTPOFF(%rip), %r11
-        movq    %fs:(%r11), %r11
+        call    get_sandbox_current_thread_app_ctx@PLT
+        movq    0x0(%rax), %r11
+        // restore old return
+        movq    %r15, %rax
 
         /* Callee save registers */
         movq    0x00(%r11), %rbx
@@ -98,8 +102,8 @@ post_call:
 .align 16
 context_switch_to_sbx_callback:
 _context_switch_to_sbx_callback:
-        movq    sandbox_current_thread_app_ctx@GOTTPOFF(%rip), %r11
-        movq    %fs:(%r11), %r11
+        call    get_sandbox_current_thread_sbx_ctx@PLT
+        movq    0x0(%rax), %r11
 
         // Clear param & scratch gpr registers to prevents leaks */
         /* Load integer parameter registers */
@@ -120,9 +124,6 @@ _context_switch_to_sbx_callback:
         fxrstor fxrstor_default_state(%rip)
         /* Clear the AVX state that the "fxrstor" instruction doesn't cover. */
         vzeroupper
-
-        movq    sandbox_current_thread_sbx_ctx@GOTTPOFF(%rip), %r11
-        movq    %fs:(%r11), %r11
 
         // Restore the untrusted code's x87 and SSE control words.
         fldcw   0x68(%r11)

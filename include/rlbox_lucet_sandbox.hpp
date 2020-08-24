@@ -36,6 +36,11 @@
 #  endif
 #endif
 
+extern "C" {
+  sandbox_thread_ctx** get_sandbox_current_thread_app_ctx();
+  sandbox_thread_ctx** get_sandbox_current_thread_sbx_ctx();
+}
+
 namespace rlbox {
 
 namespace detail {
@@ -209,23 +214,24 @@ struct rlbox_lucet_sandbox_thread_data
 {
   rlbox_lucet_sandbox* sandbox;
   uint32_t last_callback_invoked;
+  sandbox_thread_ctx* sandbox_current_thread_app_ctx;
+  sandbox_thread_ctx* sandbox_current_thread_sbx_ctx;
 };
 
-#ifdef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
-
-rlbox_lucet_sandbox_thread_data* get_rlbox_lucet_sandbox_thread_data();
 #  define RLBOX_LUCET_SANDBOX_STATIC_VARIABLES()                               \
-    thread_local rlbox::rlbox_lucet_sandbox_thread_data                        \
-      rlbox_lucet_sandbox_thread_info{ 0, 0 };                           \
-    namespace rlbox {                                                          \
-      rlbox_lucet_sandbox_thread_data* get_rlbox_lucet_sandbox_thread_data()   \
+    thread_local std::unique_ptr<rlbox::rlbox_lucet_sandbox_thread_data> rlbox_lucet_sandbox_thread_info_ptr =     \
+      std::make_unique<rlbox::rlbox_lucet_sandbox_thread_data>();              \
+    extern "C" {                                                               \
+      rlbox::rlbox_lucet_sandbox_thread_data* get_rlbox_lucet_sandbox_thread_data()   \
       {                                                                        \
-        return &rlbox_lucet_sandbox_thread_info;                               \
+        return rlbox_lucet_sandbox_thread_info_ptr.get();                      \
       }                                                                        \
     }                                                                          \
     static_assert(true, "Enforce semi-colon")
 
-#endif
+extern "C" {
+    rlbox_lucet_sandbox_thread_data* get_rlbox_lucet_sandbox_thread_data();
+}
 
 class rlbox_lucet_sandbox
 {
@@ -275,10 +281,6 @@ private:
   // library. An extra reference to the shared_ptr will ensure this.
   inline static std::vector<std::shared_ptr<FunctionTable>>
     saved_callback_slot_info;
-
-#ifndef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
-  thread_local static inline rlbox_lucet_sandbox_thread_data thread_data{ 0, 0 };
-#endif
 
   template<typename T_FormalRet, typename T_ActualRet>
   inline auto serialize_to_sandbox(T_ActualRet arg)
@@ -379,10 +381,9 @@ private:
     void* /* vmContext */,
     typename lucet_detail::convert_type_to_wasm_type<T_Args>::type... params)
   {
+    auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
     sandbox_current_thread_sbx_ctx->rip = get_return_target();
-#ifdef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
-#endif
     thread_data.last_callback_invoked = N;
     using T_Func = T_Ret (*)(T_Args...);
     T_Func func;
@@ -410,10 +411,9 @@ private:
     typename lucet_detail::convert_type_to_wasm_type<T_Ret>::type ret,
     typename lucet_detail::convert_type_to_wasm_type<T_Args>::type... params)
   {
+    auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
     sandbox_current_thread_sbx_ctx->rip = get_return_target();
-#ifdef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
-#endif
     thread_data.last_callback_invoked = N;
     using T_Func = T_Ret (*)(T_Args...);
     T_Func func;
@@ -503,6 +503,8 @@ private:
   template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret, typename T_FormalArg, typename... T_FormalArgs, typename T_ActualArg, typename... T_ActualArgs>
   static inline void push_parameters(T_Ret(*)(T_FormalArg, T_FormalArgs...), T_ActualArg&& arg, T_ActualArgs&&... args) {
     T_FormalArg arg_conv = arg;
+    auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
+
     if constexpr (
       (std::is_integral_v<T_FormalArg> || std::is_pointer_v<T_FormalArg> || std::is_reference_v<T_FormalArg>) &&
       T_IntegerNum < 6
@@ -557,6 +559,7 @@ private:
 
   template<typename T_Ret>
   static inline void push_return(T_Ret ret) {
+    auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
     if constexpr (std::is_integral_v<T_Ret> || std::is_pointer_v<T_Ret>) {
       uint64_t val = serialize_to_uint64(ret);
       sandbox_current_thread_sbx_ctx->rax = val;
@@ -754,9 +757,7 @@ protected:
   template<typename T, typename T_Converted, typename... T_Args>
   auto impl_invoke_with_func_ptr(T_Converted* func_ptr, T_Args&&... params)
   {
-#ifdef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
-#endif
     thread_data.sandbox = this;
     lucet_set_curr_instance(sandbox);
 
@@ -787,6 +788,9 @@ protected:
       T_Ret ret = *ptr;
       return ret;
     }
+
+    auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
+    auto& sandbox_current_thread_app_ctx = *get_sandbox_current_thread_app_ctx();
 
     sandbox_thread_ctx app_ctx {0};
     sandbox_thread_ctx sbx_ctx {0};
@@ -952,9 +956,7 @@ protected:
   static inline std::pair<rlbox_lucet_sandbox*, void*>
   impl_get_executed_callback_sandbox_and_key()
   {
-#ifdef RLBOX_EMBEDDER_PROVIDES_TLS_STATIC_VARIABLES
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
-#endif
     auto sandbox = thread_data.sandbox;
     auto callback_num = thread_data.last_callback_invoked;
     void* key = sandbox->callback_unique_keys[callback_num];
