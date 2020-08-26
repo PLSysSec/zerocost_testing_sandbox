@@ -6,8 +6,7 @@
 .align 16
 context_switch_to_sbx_func:
 _context_switch_to_sbx_func:
-        call    get_sandbox_current_thread_app_ctx@PLT
-        movq    0x0(%rax), %r11
+        movq    0x10(%rdi), %r11
 
         // Save the return address of the app and set the return of the trampoline
         movq    0x0(%rsp), %rax
@@ -31,8 +30,7 @@ _context_switch_to_sbx_func:
          */
         stmxcsr 0x70(%r11)
 
-        call    get_sandbox_current_thread_sbx_ctx@PLT
-        movq    0x0(%rax), %r11
+        movq    0x18(%rdi), %r11
 
         // Clear scratch gpr registers to prevents leaks */
         xor    %rax, %rax
@@ -114,11 +112,6 @@ _context_switch_to_sbx_callback:
         xor    %r8 , %r8
         xor    %r9 , %r9
         xor    %r10, %r10
-        xor    %rbx, %rbx
-        xor    %r12, %r12
-        xor    %r13, %r13
-        xor    %r14, %r14
-        xor    %r15, %r15
 
         // Clear the x87, MMX, and SSE state.
         fxrstor fxrstor_default_state(%rip)

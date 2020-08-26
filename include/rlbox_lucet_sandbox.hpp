@@ -856,9 +856,9 @@ protected:
 
     if constexpr (std::is_void_v<T_Ret>) {
       RLBOX_LUCET_UNUSED(ret);
-      context_switcher(heap_base, serialize_class_arg(params)...);
+      context_switcher(reinterpret_cast<uint64_t>(&thread_data), serialize_class_arg(params)...);
     } else {
-      ret = context_switcher(heap_base, serialize_class_arg(params)...);
+      ret = context_switcher(reinterpret_cast<uint64_t>(&thread_data), serialize_class_arg(params)...);
     }
 
     for (size_t i = 0; i < alloc_length; i++) {
