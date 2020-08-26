@@ -218,15 +218,15 @@ struct rlbox_lucet_sandbox_thread_data
   sandbox_thread_ctx* sandbox_current_thread_sbx_ctx;
 };
 
-#  define RLBOX_LUCET_SANDBOX_STATIC_VARIABLES()                               \
-    thread_local std::unique_ptr<rlbox::rlbox_lucet_sandbox_thread_data> rlbox_lucet_sandbox_thread_info_ptr =     \
-      std::make_unique<rlbox::rlbox_lucet_sandbox_thread_data>();              \
-    extern "C" {                                                               \
-      rlbox::rlbox_lucet_sandbox_thread_data* get_rlbox_lucet_sandbox_thread_data()   \
-      {                                                                        \
-        return rlbox_lucet_sandbox_thread_info_ptr.get();                      \
-      }                                                                        \
-    }                                                                          \
+#  define RLBOX_LUCET_SANDBOX_STATIC_VARIABLES()                                                    \
+    extern "C" {                                                                                    \
+      thread_local rlbox::rlbox_lucet_sandbox_thread_data* rlbox_lucet_sandbox_thread_info_ptr =        \
+        (rlbox::rlbox_lucet_sandbox_thread_data*) malloc(sizeof(rlbox::rlbox_lucet_sandbox_thread_data));                                     \
+      rlbox::rlbox_lucet_sandbox_thread_data* get_rlbox_lucet_sandbox_thread_data()                 \
+      {                                                                                             \
+        return rlbox_lucet_sandbox_thread_info_ptr;                                                 \
+      }                                                                                             \
+    }                                                                                               \
     static_assert(true, "Enforce semi-colon")
 
 extern "C" {
@@ -504,12 +504,10 @@ private:
   static inline void push_parameters(T_Ret(*)(T_FormalArg, T_FormalArgs...), T_ActualArg&& arg, T_ActualArgs&&... args) {
     T_FormalArg arg_conv = arg;
     auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
+    uint64_t val = serialize_to_uint64(arg_conv);
 
-    if constexpr (
-      (std::is_integral_v<T_FormalArg> || std::is_pointer_v<T_FormalArg> || std::is_reference_v<T_FormalArg>) &&
-      T_IntegerNum < 6
-    ) {
-      uint64_t val = serialize_to_uint64(arg_conv);
+    // Stack parameters will be handled automatically by the OS calling conv
+    if constexpr (std::is_integral_v<T_FormalArg> || std::is_pointer_v<T_FormalArg> || std::is_reference_v<T_FormalArg> || std::is_enum_v<T_FormalArg>) {
 
       if constexpr (T_IntegerNum == 0) {
         sandbox_current_thread_sbx_ctx->rdi = val;
@@ -527,11 +525,7 @@ private:
 
       push_parameters<T_IntegerNum + 1, T_FloatNum>(reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0), std::forward<T_ActualArgs>(args)...);
 
-    } else if constexpr (
-      (std::is_same_v<T_FormalArg, float> || std::is_same_v<T_FormalArg, double>) &&
-      T_FloatNum < 8
-    ) {
-      uint64_t val = serialize_to_uint64(arg_conv);
+    } else if constexpr (std::is_same_v<T_FormalArg, float> || std::is_same_v<T_FormalArg, double>) {
 
       if constexpr (T_FloatNum == 0) {
         sandbox_current_thread_sbx_ctx->xmm0 = val;
@@ -554,6 +548,7 @@ private:
       push_parameters<T_IntegerNum, T_FloatNum + 1>(reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0), std::forward<T_ActualArgs>(args)...);
     } else {
       // This is handled natively by the os calling convention
+      static_assert(lucet_detail::false_v<T_Ret>, "Unknown case");
     }
   }
 

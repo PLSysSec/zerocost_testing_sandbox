@@ -8,7 +8,7 @@ context_switch_to_sbx_func:
 _context_switch_to_sbx_func:
         movq    0x10(%rdi), %r11
 
-        // Save the return address of the app and set the return of the trampoline
+        /* Save the return address of the app and set the return of the trampoline */
         movq    0x0(%rsp), %rax
         movq    %rax, 0xb8(%r11)
         leaq    post_call(%rip), %rax
@@ -32,7 +32,7 @@ _context_switch_to_sbx_func:
 
         movq    0x18(%rdi), %r11
 
-        // Clear scratch gpr registers to prevents leaks */
+        /* Clear scratch gpr registers to prevents leaks */
         xor    %rax, %rax
         xor    %rbx, %rbx
         xor    %r12, %r12
@@ -40,12 +40,12 @@ _context_switch_to_sbx_func:
         xor    %r14, %r14
         xor    %r15, %r15
 
-        // Clear the x87, MMX, and SSE state.
+        /* Clear the x87, MMX, and SSE state. */
         fxrstor fxrstor_default_state(%rip)
         /* Clear the AVX state that the "fxrstor" instruction doesn't cover. */
         vzeroupper
 
-        // Restore the untrusted code's x87 and SSE control words.
+        /* Restore the untrusted code's x87 and SSE control words. */
         fldcw   0x68(%r11)
         ldmxcsr 0x70(%r11)
 
@@ -68,17 +68,17 @@ _context_switch_to_sbx_func:
         movsd   0xa8(%r11), %xmm6
         movsd   0xb0(%r11), %xmm7
 
-        // Move the target into r11
+        /* Move the target into r11*/
         movq    0xb8(%r11), %r11
         jmp     *%r11
 
 post_call:
-        // save the return value
+        /* save the return value*/
         movq    %rax, %r15
-        // retrieve the contexts as we can't trust the current state of registers
+        /* retrieve the contexts as we can't trust the current state of registers*/
         call    get_sandbox_current_thread_app_ctx@PLT
         movq    0x0(%rax), %r11
-        // restore old return
+        /* restore old return*/
         movq    %r15, %rax
 
         /* Callee save registers */
@@ -91,9 +91,10 @@ post_call:
         fldcw   0x68(%r11)
         ldmxcsr 0x70(%r11)
 
-        // restore the return address
+        /* restore the return address*/
         movq    0xb8(%r11), %r11
         jmp     *%r11
+        ud2
 
 .globl context_switch_to_sbx_callback
 .type context_switch_to_sbx_callback,@function
@@ -103,22 +104,21 @@ _context_switch_to_sbx_callback:
         call    get_sandbox_current_thread_sbx_ctx@PLT
         movq    0x0(%rax), %r11
 
-        // Clear param & scratch gpr registers to prevents leaks */
-        /* Load integer parameter registers */
+        /* Clear param & scratch gpr registers to prevents leaks */
         xor    %rdi, %rdi
         xor    %rsi, %rsi
-        // xor    %rdx, %rdx
+        /* Dont need to clear rdx as it is replaced with return value */
         xor    %rcx, %rcx
         xor    %r8 , %r8
         xor    %r9 , %r9
         xor    %r10, %r10
 
-        // Clear the x87, MMX, and SSE state.
+        /* Clear the x87, MMX, and SSE state.*/
         fxrstor fxrstor_default_state(%rip)
         /* Clear the AVX state that the "fxrstor" instruction doesn't cover. */
         vzeroupper
 
-        // Restore the untrusted code's x87 and SSE control words.
+        /* Restore the untrusted code's x87 and SSE control words.*/
         fldcw   0x68(%r11)
         ldmxcsr 0x70(%r11)
 
@@ -127,18 +127,18 @@ _context_switch_to_sbx_callback:
         movq    0x40(%r11), %rdx
         movsd   0x78(%r11), %xmm0
 
-        // Move the target into r11
+        /* Move the target into r11*/
         movq    0xb8(%r11), %r11
-        // we don't have to clear r11 as this only contains a pointer to the sandbox function, this is not a data leak
+        /* we don't have to clear r11 as this only contains a pointer to the sandbox function, this is not a data leak*/
         jmp    *%r11
-        // no return
+        /* no return*/
         ud2
 
 .globl get_return_target
 .type get_return_target,@function
 .align 16
 get_return_target:
-        // Assumes frame-pointer exists
+        /* Assumes frame-pointer exists */
         mov 0x8(%rbp), %rax
         ret
 
@@ -146,7 +146,7 @@ get_return_target:
 .type set_return_target,@function
 .align 16
 set_return_target:
-        // Assumes frame-pointer exists
+        /* Assumes frame-pointer exists */
         mov %rdi, 0x8(%rbp)
         ret
 
