@@ -36,6 +36,8 @@ typedef struct {
 
     uint64_t rip;
     uint64_t rax;
+
+    uint64_t rsp;
 } sandbox_thread_ctx;
 
 // extern __thread sandbox_thread_ctx* sandbox_current_thread_app_ctx;
@@ -45,6 +47,8 @@ void context_switch_to_sbx_func();
 void context_switch_to_sbx_callback();
 uint64_t get_return_target();
 void set_return_target(uint64_t val);
+// returns old stack pointer
+uint64_t save_sbx_stack_and_switch_to_app_stack(uint64_t app_stack_top, uint64_t param_and_return_size_plus16);
 
 #ifdef __cplusplus
 }

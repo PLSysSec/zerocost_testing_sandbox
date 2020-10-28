@@ -250,6 +250,9 @@ private:
   size_t return_slot_size = 0;
   T_PointerType return_slot = 0;
 
+  char* sandbox_stack_pointer = 0;
+  char* curr_sandbox_stack_pointer = 0;
+
   static const size_t MAX_CALLBACKS = 128;
   RLBOX_SHARED_LOCK(callback_mutex);
   void* callback_unique_keys[MAX_CALLBACKS]{ 0 };
@@ -381,9 +384,20 @@ private:
     void* /* vmContext */,
     typename lucet_detail::convert_type_to_wasm_type<T_Args>::type... params)
   {
+    auto& sandbox_current_thread_app_ctx = *get_sandbox_current_thread_app_ctx();
+    const auto stack_param_size = get_stack_param_size<0, 0>(callback_interceptor<N, T_Ret, T_Args...>);
+    const auto stack_param_ret_size = stack_param_size + sizeof(uintptr_t) + 16;
+    const auto curr_sbx_stack = save_sbx_stack_and_switch_to_app_stack(sandbox_current_thread_app_ctx->rsp, stack_param_ret_size);
+
     auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
     sandbox_current_thread_sbx_ctx->rip = get_return_target();
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
+
+    const auto prev_sbx_stack = thread_data.sandbox->curr_sandbox_stack_pointer;
+    thread_data.sandbox->curr_sandbox_stack_pointer = (char*) curr_sbx_stack;
+    // keep stack 16 byte aligned
+    thread_data.sandbox->curr_sandbox_stack_pointer -= (reinterpret_cast<uintptr_t>(thread_data.sandbox->curr_sandbox_stack_pointer) % 16);
+
     thread_data.last_callback_invoked = N;
     using T_Func = T_Ret (*)(T_Args...);
     T_Func func;
@@ -397,10 +411,12 @@ private:
     if constexpr (std::is_void_v<T_Ret>) {
       func(thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
       set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
+      thread_data.sandbox->curr_sandbox_stack_pointer = prev_sbx_stack;
     } else {
       auto ret = func(thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
       push_return(ret);
       set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
+      thread_data.sandbox->curr_sandbox_stack_pointer = prev_sbx_stack;
       return ret;
     }
   }
@@ -411,6 +427,11 @@ private:
     typename lucet_detail::convert_type_to_wasm_type<T_Ret>::type ret,
     typename lucet_detail::convert_type_to_wasm_type<T_Args>::type... params)
   {
+    auto& sandbox_current_thread_app_ctx = *get_sandbox_current_thread_app_ctx();
+    const auto stack_param_size = get_stack_param_size<0, 0>(callback_interceptor_promoted<N, T_Ret, T_Args...>);
+    const auto stack_param_ret_size = stack_param_size + sizeof(uintptr_t) + 16;
+    switch_to_target_stack(sandbox_current_thread_app_ctx->rsp, stack_param_ret_size);
+
     auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
     sandbox_current_thread_sbx_ctx->rip = get_return_target();
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
@@ -497,16 +518,41 @@ private:
     return val;
   }
 
+  template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret, typename... T_FormalArgs>
+  static inline size_t get_stack_param_size(T_Ret(*)(T_FormalArgs...)) { return 0; }
+
+  template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret, typename T_FormalArg, typename... T_FormalArgs>
+  static inline size_t get_stack_param_size(T_Ret(*)(T_FormalArg, T_FormalArgs...)) {
+    size_t curr_val = 0;
+
+    if constexpr (std::is_integral_v<T_FormalArg> || std::is_pointer_v<T_FormalArg> || std::is_reference_v<T_FormalArg> || std::is_enum_v<T_FormalArg>) {
+      if constexpr (T_IntegerNum > 5) {
+        curr_val = 8;
+      }
+      auto ret = curr_val + get_stack_param_size<T_IntegerNum + 1, T_FloatNum>(reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0));
+      return ret;
+    } else if constexpr (std::is_same_v<T_FormalArg, float> || std::is_same_v<T_FormalArg, double>) {
+      if constexpr (T_FloatNum > 7) {
+        curr_val = 8;
+      }
+      auto ret = curr_val + get_stack_param_size<T_IntegerNum, T_FloatNum + 1>(reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0));
+      return ret;
+    } else {
+      static_assert(lucet_detail::false_v<T_Ret>, "Unknown case");
+    }
+  }
+
+  // push's parameters into the target context registers
+  // first param is an in out parameter: current position of the stack pointer
   template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret, typename... T_FormalArgs, typename... T_ActualArgs>
-  static inline void push_parameters(T_Ret(*)(T_FormalArgs...), T_ActualArgs&&...) {}
+  static inline void push_parameters(char*& stack_pointer, T_Ret(*)(T_FormalArgs...), T_ActualArgs&&...) { }
 
   template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret, typename T_FormalArg, typename... T_FormalArgs, typename T_ActualArg, typename... T_ActualArgs>
-  static inline void push_parameters(T_Ret(*)(T_FormalArg, T_FormalArgs...), T_ActualArg&& arg, T_ActualArgs&&... args) {
+  static inline void push_parameters(char*& stack_pointer, T_Ret(*)(T_FormalArg, T_FormalArgs...), T_ActualArg&& arg, T_ActualArgs&&... args) {
     T_FormalArg arg_conv = arg;
     auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
     uint64_t val = serialize_to_uint64(arg_conv);
 
-    // Stack parameters will be handled automatically by the OS calling conv
     if constexpr (std::is_integral_v<T_FormalArg> || std::is_pointer_v<T_FormalArg> || std::is_reference_v<T_FormalArg> || std::is_enum_v<T_FormalArg>) {
 
       if constexpr (T_IntegerNum == 0) {
@@ -521,9 +567,12 @@ private:
         sandbox_current_thread_sbx_ctx->r8 = val;
       } else if constexpr (T_IntegerNum == 5) {
         sandbox_current_thread_sbx_ctx->r9 = val;
+      } else {
+        stack_pointer -= sizeof(val);
+        memcpy(stack_pointer, &val, sizeof(val));
       }
 
-      push_parameters<T_IntegerNum + 1, T_FloatNum>(reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0), std::forward<T_ActualArgs>(args)...);
+      push_parameters<T_IntegerNum + 1, T_FloatNum>(stack_pointer, reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0), std::forward<T_ActualArgs>(args)...);
 
     } else if constexpr (std::is_same_v<T_FormalArg, float> || std::is_same_v<T_FormalArg, double>) {
 
@@ -543,11 +592,13 @@ private:
         sandbox_current_thread_sbx_ctx->xmm6 = val;
       } else if constexpr (T_FloatNum == 7) {
         sandbox_current_thread_sbx_ctx->xmm7 = val;
+      } else {
+        stack_pointer -= sizeof(val);
+        memcpy(stack_pointer, &val, sizeof(val));
       }
 
-      push_parameters<T_IntegerNum, T_FloatNum + 1>(reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0), std::forward<T_ActualArgs>(args)...);
+      push_parameters<T_IntegerNum, T_FloatNum + 1>(stack_pointer, reinterpret_cast<T_Ret(*)(T_FormalArgs...)>(0), std::forward<T_ActualArgs>(args)...);
     } else {
-      // This is handled natively by the os calling convention
       static_assert(lucet_detail::false_v<T_Ret>, "Unknown case");
     }
   }
@@ -589,6 +640,14 @@ protected:
     uintptr_t heap_offset_mask = std::numeric_limits<T_PointerType>::max();
     detail::dynamic_check((heap_base & heap_offset_mask) == 0,
                           "Sandbox heap not aligned to 4GB");
+
+    // allocate a 16M sandbox stack by default
+    const uint64_t stack_size = 16*1024*1024;
+    sandbox_stack_pointer = new char[stack_size];
+    detail::dynamic_check(sandbox_stack_pointer != nullptr, "Could not allocate sandbox stack");
+    curr_sandbox_stack_pointer = sandbox_stack_pointer + stack_size;
+    // keep stack 16 byte aligned
+    curr_sandbox_stack_pointer -= (reinterpret_cast<uintptr_t>(curr_sandbox_stack_pointer) % 16);
 
     // cache these for performance
     malloc_index = impl_lookup_symbol("malloc");
@@ -847,7 +906,15 @@ protected:
 
     sandbox_current_thread_sbx_ctx->rip = reinterpret_cast<uint64_t>(func_ptr_conv);
 
-    push_parameters<0, 0>(func_ptr_conv, heap_base, serialize_class_arg(params)...);
+    char* prev_sandbox_stack_pointer = curr_sandbox_stack_pointer;
+    // keep stack 16 byte aligned
+    const auto stack_param_size = get_stack_param_size<0, 0>(func_ptr_conv);
+    const auto stack_correction = (16 - (stack_param_size % 16)) % 16;
+    curr_sandbox_stack_pointer -= stack_correction;
+    push_parameters<0, 0>(curr_sandbox_stack_pointer /* in-out param */, func_ptr_conv, heap_base, serialize_class_arg(params)...);
+    // make room for return address, which is filled in by the trampoline
+    curr_sandbox_stack_pointer -= sizeof(size_t);
+    sandbox_current_thread_sbx_ctx->rsp = reinterpret_cast<uintptr_t>(curr_sandbox_stack_pointer);
 
     if constexpr (std::is_void_v<T_Ret>) {
       RLBOX_LUCET_UNUSED(ret);
@@ -855,6 +922,9 @@ protected:
     } else {
       ret = context_switcher(reinterpret_cast<uint64_t>(&thread_data), serialize_class_arg(params)...);
     }
+
+    // restore the old stack pointer
+    curr_sandbox_stack_pointer = prev_sandbox_stack_pointer;
 
     for (size_t i = 0; i < alloc_length; i++) {
       impl_free_in_sandbox(allocations_buff[i]);

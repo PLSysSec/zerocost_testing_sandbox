@@ -6,13 +6,19 @@
 .align 16
 context_switch_to_sbx_func:
 _context_switch_to_sbx_func:
+
+        /* Stage 0: Copy all app stack parameters to sandbox stack
+        expected to be completed before invocation */
+
+        /* Stage 1: Save application register state */
         movq    0x10(%rdi), %r11
 
-        /* Save the return address of the app and set the return of the trampoline */
+        /* save the rsp of the application */
+        movq    %rsp, 0xc8(%r11)
+
+        /* Save the return address of the app */
         movq    0x0(%rsp), %rax
         movq    %rax, 0xb8(%r11)
-        leaq    post_call(%rip), %rax
-        movq    %rax, 0x0(%rsp)
 
         /* Callee save registers */
         movq    %rbx, 0x00(%r11)
@@ -30,7 +36,11 @@ _context_switch_to_sbx_func:
          */
         stmxcsr 0x70(%r11)
 
+        /* Stage 2: Load sandbox register state */
         movq    0x18(%rdi), %r11
+
+        /* !!!!!!!!!!!!!!!!HACK --- use same stack 
+        movq    %rsp, 0xc8(%r11)*/
 
         /* Clear scratch gpr registers to prevents leaks */
         xor    %rax, %rax
@@ -68,11 +78,18 @@ _context_switch_to_sbx_func:
         movsd   0xa8(%r11), %xmm6
         movsd   0xb0(%r11), %xmm7
 
+        /* load the rsp of the sandbox and set the return address to the trampoline done label */
+        movq    0xc8(%r11), %rsp
+        leaq    context_switch_to_sbx_func_done(%rip), %rax
+        movq    %rax, 0x0(%rsp)
+
+        /* Stage 3: Perform the call */
         /* Move the target into r11*/
         movq    0xb8(%r11), %r11
         jmp     *%r11
 
-post_call:
+context_switch_to_sbx_func_done:
+        /* Stage 4: Restore application register state */
         /* save the return value*/
         movq    %rax, %r15
         /* retrieve the contexts as we can't trust the current state of registers*/
@@ -90,6 +107,10 @@ post_call:
         movq    0x28(%r11), %r15
         fldcw   0x68(%r11)
         ldmxcsr 0x70(%r11)
+
+        /* load the rsp of the app -- offset by 8 as the return address has already been consumed */
+        movq    0xc8(%r11), %rsp
+        addq    $0x8, %rsp
 
         /* restore the return address*/
         movq    0xb8(%r11), %r11
@@ -127,6 +148,9 @@ _context_switch_to_sbx_callback:
         movq    0x40(%r11), %rdx
         movsd   0x78(%r11), %xmm0
 
+        /* Restore the stack of the sandbox */
+        movq    0xc8(%r11), %rsp
+
         /* Move the target into r11*/
         movq    0xb8(%r11), %r11
         /* we don't have to clear r11 as this only contains a pointer to the sandbox function, this is not a data leak*/
@@ -138,6 +162,7 @@ _context_switch_to_sbx_callback:
 .type get_return_target,@function
 .align 16
 get_return_target:
+_get_return_target:
         /* Assumes frame-pointer exists */
         mov 0x8(%rbp), %rax
         ret
@@ -146,8 +171,70 @@ get_return_target:
 .type set_return_target,@function
 .align 16
 set_return_target:
+_set_return_target:
         /* Assumes frame-pointer exists */
         mov %rdi, 0x8(%rbp)
+        ret
+
+
+/*
+ * param1: sandbox stack (rsp2 = rdi)
+ * param2: param_spill_size + return slot size (r_psize = rsi)
+
+rb_old (rcx) = rbp
+r_t (rdx) = rbp - rsp + r_psize
+r_rsp2mint (rdi) = rsp2 - r_t
+memcpy(r_rsp2mint, rsp, r_t)
+rsp = r_rsp2mint (unspill to rdx)
+rbp = rsp2 (rdi) - r_psize (rsi)
+return rb_old (rcx)
+ */
+ .globl save_sbx_stack_and_switch_to_app_stack
+.type save_sbx_stack_and_switch_to_app_stack,@function
+.align 16
+save_sbx_stack_and_switch_to_app_stack:
+_save_sbx_stack_and_switch_to_app_stack:
+        // Save rsp
+        mov %rsp, %rcx
+
+        /* Compute r_t */
+        mov %rbp, %rdx
+        sub %rsp, %rdx
+        add %rsi, %rdx
+
+        // Save params
+        push %rdi
+        push %rsi
+        //Save old stack
+        push %rcx
+
+        /* Compute r_rsp2mint and save */
+        sub %rdx, %rdi
+        push %rdi
+
+        /* Setup memcpy call */
+        /* Noop: mov %r_rsp2mint, %rdi */
+        mov %rcx, %rsi
+        /* Noop: mov %r_t, %rdx */
+        call memcpy@PLT
+        /* Save the current sandbox stack return frame  */
+        call    get_sandbox_current_thread_sbx_ctx@PLT
+        movq    0x0(%rax), %r11
+        movq    %rbp, 0xc8(%r11)
+        addq    $0x10, 0xc8(%r11)
+
+        /* rsp2mint is now in %rdx */
+        pop %rdx
+        /* Get val of old stack in rax return */
+        pop %rax
+        /* Restore func params */
+        pop %rsi
+        pop %rdi
+
+        mov %rdx, %rsp
+
+        mov %rdi, %rbp
+        sub %rsi, %rbp
         ret
 
 .section .rodata, "a"
