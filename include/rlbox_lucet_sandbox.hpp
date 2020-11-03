@@ -665,7 +665,10 @@ protected:
     impl_create_sandbox(lucet_module_path, external_loads_exist, allow_stdio);
   }
 
-  inline void impl_destroy_sandbox() { lucet_drop_module(sandbox); }
+  inline void impl_destroy_sandbox() {
+    delete[] sandbox_stack_pointer;
+    lucet_drop_module(sandbox);
+  }
 
   template<typename T>
   inline void* impl_get_unsandboxed_pointer(T_PointerType p) const
