@@ -45,6 +45,8 @@ typedef struct {
 
 void context_switch_to_sbx_func();
 void context_switch_to_sbx_callback();
+void context_switch_to_sbx_func_noswitchstack();
+void context_switch_to_sbx_callback_noswitchstack();
 uint64_t get_return_target();
 void set_return_target(uint64_t val);
 // returns old stack pointer

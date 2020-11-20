@@ -12,6 +12,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 SET(ASM_OPTIONS "-x assembler-with-cpp")
 enable_language(C CXX ASM)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-stack-protector")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-stack-protector")
 
 option(DEV "Use settings suitable for dev contributions to rlbox" OFF)
 
@@ -233,6 +235,7 @@ add_custom_command(OUTPUT ${GLUE_LIB_WASM} ${GLUE_LIB_SO}
 add_custom_target(glue_lib_wasm ALL DEPENDS lucet_release ${GLUE_LIB_WASM} ${GLUE_LIB_SO})
 
 add_executable(test_rlbox_glue test/test_lucet_sandbox_glue_main.cpp
+                               test/test_lucet_sandbox_glue_noswitchstack.cpp
                                test/test_lucet_sandbox_glue.cpp
                                test/test_lucet_sandbox_glue_preload.cpp
                                test/test_lucet_sandbox_glue_embedder_vars.cpp
