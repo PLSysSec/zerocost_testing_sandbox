@@ -40,12 +40,9 @@ typedef struct {
     uint64_t rsp;
 } sandbox_thread_ctx;
 
-// extern __thread sandbox_thread_ctx* sandbox_current_thread_app_ctx;
-// extern __thread sandbox_thread_ctx* sandbox_current_thread_sbx_ctx;
-
-void context_switch_to_sbx_func();
+uint64_t context_switch_to_sbx_func(void* contexts);
 void context_switch_to_sbx_callback();
-void context_switch_to_sbx_func_noswitchstack();
+uint64_t context_switch_to_sbx_func_noswitchstack(void* contexts);
 void context_switch_to_sbx_callback_noswitchstack();
 uint64_t get_return_target();
 void set_return_target(uint64_t val);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lucet_sandbox.h"
-#include "lucet_zero_trampoline.h"
+#include "ctx_save_trampoline.h"
 
 #include <cstdint>
 #include <iostream>

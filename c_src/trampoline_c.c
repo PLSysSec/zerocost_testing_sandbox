@@ -1,8 +1,5 @@
-#include "lucet_zero_trampoline.h"
+#include "ctx_save_trampoline.h"
 #include <stdint.h>
-
-// __thread sandbox_thread_ctx* sandbox_current_thread_app_ctx = 0;
-// __thread sandbox_thread_ctx* sandbox_current_thread_sbx_ctx = 0;
 
 struct rlbox_lucet_sandbox_thread_data
 {
