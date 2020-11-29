@@ -4,6 +4,9 @@
 #define NOSWITCHSTACK_ASM
 #include "trampoline_asm_inc.S"
 #undef  NOSWITCHSTACK_ASM
+#define WINDOWSMODE
+#include "trampoline_asm_inc.S"
+#undef  WINDOWSMODE
 
 .globl get_return_target
 .type get_return_target,@function

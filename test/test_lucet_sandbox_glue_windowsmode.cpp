@@ -1,12 +1,12 @@
 #define RLBOX_USE_EXCEPTIONS
 #define RLBOX_ENABLE_DEBUG_ASSERTIONS
 #define RLBOX_SINGLE_THREADED_INVOCATIONS
-#define RLBOX_ZEROCOST_NOSWITCHSTACK
+#define RLBOX_ZEROCOST_WINDOWSMODE
 #include "rlbox_lucet_sandbox.hpp"
 RLBOX_LUCET_SANDBOX_STATIC_VARIABLES();
 
 // NOLINTNEXTLINE
-#define TestName "rlbox_lucet_sandbox noswitchstack"
+#define TestName "rlbox_lucet_sandbox windows mode"
 // NOLINTNEXTLINE
 #define TestType rlbox::rlbox_lucet_sandbox
 

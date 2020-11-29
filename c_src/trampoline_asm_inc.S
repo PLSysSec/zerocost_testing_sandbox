@@ -1,6 +1,13 @@
 .text
+#ifdef WINDOWSMODE
 
-#ifndef NOSWITCHSTACK_ASM
+.globl context_switch_to_sbx_func_windowsmode
+.type context_switch_to_sbx_func_windowsmode,@function
+.align 16
+context_switch_to_sbx_func_windowsmode:
+_context_switch_to_sbx_func_windowsmode:
+
+#elif !defined(NOSWITCHSTACK_ASM)
 
 .globl context_switch_to_sbx_func
 .type context_switch_to_sbx_func,@function
@@ -40,6 +47,20 @@ _context_switch_to_sbx_func_noswitchstack:
         movq    %r13, 0x18(%r11)
         movq    %r14, 0x20(%r11)
         movq    %r15, 0x28(%r11)
+
+#ifdef WINDOWSMODE
+        /* Callee save registers on windows */
+        movsd   %xmm6 , 0xa8(%r11)
+        movsd   %xmm7 , 0xb0(%r11)
+        movsd   %xmm8 , 0xd0(%r11)
+        movsd   %xmm9 , 0xd8(%r11)
+        movsd   %xmm10, 0xe0(%r11)
+        movsd   %xmm11, 0xe8(%r11)
+        movsd   %xmm12, 0xf0(%r11)
+        movsd   %xmm13, 0xf8(%r11)
+        movsd   %xmm14, 0x100(%r11)
+        movsd   %xmm15, 0x108(%r11)
+#endif
 
         /* fp control word is callee save */
         fnstcw  0x68(%r11)
@@ -88,16 +109,18 @@ _context_switch_to_sbx_func_noswitchstack:
         movsd   0xa8(%r11), %xmm6
         movsd   0xb0(%r11), %xmm7
 
+#ifndef NOSWITCHSTACK_ASM
         /* load the rsp of the sandbox and set the return address to the trampoline done label */
-        #ifndef NOSWITCHSTACK_ASM
         movq    0xc8(%r11), %rsp
-        #endif
+#endif
 
-        #ifndef NOSWITCHSTACK_ASM
+#ifdef WINDOWSMODE
+        leaq    context_switch_to_sbx_func_done_windowsmode(%rip), %rax
+#elif !defined(NOSWITCHSTACK_ASM)
         leaq    context_switch_to_sbx_func_done(%rip), %rax
-        #else
+#else
         leaq    context_switch_to_sbx_func_done_noswitchstack(%rip), %rax
-        #endif
+#endif
 
         movq    %rax, 0x0(%rsp)
 
@@ -106,7 +129,9 @@ _context_switch_to_sbx_func_noswitchstack:
         movq    0xb8(%r11), %r11
         jmp     *%r11
 
-#ifndef NOSWITCHSTACK_ASM
+#ifdef WINDOWSMODE
+context_switch_to_sbx_func_done_windowsmode:
+#elif !defined(NOSWITCHSTACK_ASM)
 context_switch_to_sbx_func_done:
 #else
 context_switch_to_sbx_func_done_noswitchstack:
@@ -131,16 +156,33 @@ context_switch_to_sbx_func_done_noswitchstack:
         fldcw   0x68(%r11)
         ldmxcsr 0x70(%r11)
 
+#ifdef WINDOWSMODE
+        /* Callee save registers on windows */
+        movsd   0xa8(%r11) , %xmm6
+        movsd   0xb0(%r11) , %xmm7
+        movsd   0xd0(%r11) , %xmm8
+        movsd   0xd8(%r11) , %xmm9
+        movsd   0xe0(%r11) , %xmm10
+        movsd   0xe8(%r11) , %xmm11
+        movsd   0xf0(%r11) , %xmm12
+        movsd   0xf8(%r11) , %xmm13
+        movsd   0x100(%r11), %xmm14
+        movsd   0x108(%r11), %xmm15
+#endif
+
+#ifndef NOSWITCHSTACK_ASM
         /* load the rsp of the app -- offset by 8 as the return address has already been consumed */
-        #ifndef NOSWITCHSTACK_ASM
         movq    0xc8(%r11), %rsp
         addq    $0x8, %rsp
-        #endif
+#endif
 
         /* restore the return address*/
         movq    0xb8(%r11), %r11
         jmp     *%r11
         ud2
+
+#ifndef WINDOWSMODE
+/* this code is unchanged for windows mode */
 
 #ifndef NOSWITCHSTACK_ASM
 
@@ -186,10 +228,10 @@ _context_switch_to_sbx_callback_noswitchstack:
         movq    0x40(%r11), %rdx
         movsd   0x78(%r11), %xmm0
 
-        #ifndef NOSWITCHSTACK_ASM
+#ifndef NOSWITCHSTACK_ASM
         /* Restore the stack of the sandbox */
         movq    0xc8(%r11), %rsp
-        #endif
+#endif
 
         /* Move the target into r11*/
         movq    0xb8(%r11), %r11
@@ -197,3 +239,5 @@ _context_switch_to_sbx_callback_noswitchstack:
         jmp    *%r11
         /* no return*/
         ud2
+
+#endif

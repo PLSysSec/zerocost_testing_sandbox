@@ -928,7 +928,13 @@ protected:
     auto func_ptr_conv =
       reinterpret_cast<T_ConvHeap*>(reinterpret_cast<uintptr_t>(func_ptr));
 
-    #ifndef RLBOX_ZEROCOST_NOSWITCHSTACK
+    #ifdef RLBOX_ZEROCOST_WINDOWSMODE
+      #if defined(RLBOX_ZEROCOST_NOSWITCHSTACK)
+        #error "Zerocost: disabling stack switching is not supported in windows mode"
+      #endif
+      auto context_switcher =
+        reinterpret_cast<T_ConvHeap*>(reinterpret_cast<uintptr_t>(context_switch_to_sbx_func_windowsmode));
+    #elif !defined(RLBOX_ZEROCOST_NOSWITCHSTACK)
       auto context_switcher =
         reinterpret_cast<T_ConvHeap*>(reinterpret_cast<uintptr_t>(context_switch_to_sbx_func));
     #else
