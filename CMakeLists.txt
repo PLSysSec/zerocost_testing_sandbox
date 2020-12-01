@@ -234,6 +234,14 @@ add_custom_command(OUTPUT ${GLUE_LIB_WASM} ${GLUE_LIB_SO}
 
 add_custom_target(glue_lib_wasm ALL DEPENDS lucet_release ${GLUE_LIB_WASM} ${GLUE_LIB_SO})
 
+find_package(Threads REQUIRED)
+
+if(MSVC)
+  set(LINK_LUCET_LIB -WHOLEARCHIVE lucet_sandbox_rustlib)
+else()
+  set(LINK_LUCET_LIB -Wl,--whole-archive lucet_sandbox_rustlib -Wl,--no-whole-archive)
+endif()
+
 add_executable(test_rlbox_glue test/test_lucet_sandbox_glue_main.cpp
                                test/test_lucet_sandbox_glue.cpp
                                test/test_lucet_sandbox_glue_preload.cpp
@@ -251,6 +259,20 @@ target_include_directories(test_rlbox_glue
 target_compile_definitions(test_rlbox_glue PUBLIC
                            GLUE_LIB_LUCET_PATH="${GLUE_LIB_SO}")
 add_dependencies(test_rlbox_glue lucet_sandbox_rustlib_debug lucet_sandbox_rustlib_release)
+target_link_libraries(test_rlbox_glue
+                      Catch2::Catch2
+                      ${LINK_LUCET_LIB}
+                      ${CMAKE_THREAD_LIBS_INIT}
+                      ${CMAKE_DL_LIBS}
+                      # glue_lib_lucet
+                      )
+
+if(UNIX AND NOT (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
+  target_link_libraries(test_rlbox_glue rt)
+endif()
+catch_discover_tests(test_rlbox_glue)
+
+###
 
 add_executable(test_rlbox_glue_noswitchstack test/test_lucet_sandbox_glue_main.cpp
                                test/test_lucet_sandbox_glue_noswitchstack.cpp
@@ -267,6 +289,20 @@ target_include_directories(test_rlbox_glue_noswitchstack
 target_compile_definitions(test_rlbox_glue_noswitchstack PUBLIC
                            GLUE_LIB_LUCET_PATH="${GLUE_LIB_SO}")
 add_dependencies(test_rlbox_glue_noswitchstack lucet_sandbox_rustlib_debug lucet_sandbox_rustlib_release)
+target_link_libraries(test_rlbox_glue_noswitchstack
+                      Catch2::Catch2
+                      ${LINK_LUCET_LIB}
+                      ${CMAKE_THREAD_LIBS_INIT}
+                      ${CMAKE_DL_LIBS}
+                      # glue_lib_lucet
+                      )
+
+if(UNIX AND NOT (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
+  target_link_libraries(test_rlbox_glue_noswitchstack rt)
+endif()
+catch_discover_tests(test_rlbox_glue_noswitchstack)
+
+###
 
 add_executable(test_rlbox_glue_windowsmode test/test_lucet_sandbox_glue_main.cpp
                                test/test_lucet_sandbox_glue_windowsmode.cpp
@@ -283,42 +319,6 @@ target_include_directories(test_rlbox_glue_windowsmode
 target_compile_definitions(test_rlbox_glue_windowsmode PUBLIC
                            GLUE_LIB_LUCET_PATH="${GLUE_LIB_SO}")
 add_dependencies(test_rlbox_glue_windowsmode lucet_sandbox_rustlib_debug lucet_sandbox_rustlib_release)
-
-find_package(Threads REQUIRED)
-
-
-if(MSVC)
-  set(LINK_LUCET_LIB -WHOLEARCHIVE lucet_sandbox_rustlib)
-else()
-  set(LINK_LUCET_LIB -Wl,--whole-archive lucet_sandbox_rustlib -Wl,--no-whole-archive)
-endif()
-
-target_link_libraries(test_rlbox_glue
-                      Catch2::Catch2
-                      ${LINK_LUCET_LIB}
-                      ${CMAKE_THREAD_LIBS_INIT}
-                      ${CMAKE_DL_LIBS}
-                      # glue_lib_lucet
-                      )
-
-if(UNIX AND NOT (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
-  target_link_libraries(test_rlbox_glue rt)
-endif()
-catch_discover_tests(test_rlbox_glue)
-
-target_link_libraries(test_rlbox_glue_noswitchstack
-                      Catch2::Catch2
-                      ${LINK_LUCET_LIB}
-                      ${CMAKE_THREAD_LIBS_INIT}
-                      ${CMAKE_DL_LIBS}
-                      # glue_lib_lucet
-                      )
-
-if(UNIX AND NOT (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
-  target_link_libraries(test_rlbox_glue_noswitchstack rt)
-endif()
-catch_discover_tests(test_rlbox_glue_noswitchstack)
-
 target_link_libraries(test_rlbox_glue_windowsmode
                       Catch2::Catch2
                       ${LINK_LUCET_LIB}
@@ -336,6 +336,6 @@ catch_discover_tests(test_rlbox_glue_windowsmode)
 
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} -V)
 add_dependencies(check test_rlbox_glue)
-add_dependencies(check test_rlbox_glue)
-add_dependencies(check test_rlbox_glue)
+add_dependencies(check test_rlbox_glue_noswitchstack)
+add_dependencies(check test_rlbox_glue_windowsmode)
 
