@@ -573,10 +573,10 @@ private:
   // push's parameters into the target context registers
   // first param is an in out parameter: current position of the stack pointer
   template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret, typename... T_FormalArgs, typename... T_ActualArgs>
-  static inline void push_parameters(char*& stack_pointer, T_Ret(*)(T_FormalArgs...), T_ActualArgs&&...) { }
+  static inline void push_parameters(char* stack_pointer, T_Ret(*)(T_FormalArgs...), T_ActualArgs&&...) { }
 
   template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret, typename T_FormalArg, typename... T_FormalArgs, typename T_ActualArg, typename... T_ActualArgs>
-  static inline void push_parameters(char*& stack_pointer, T_Ret(*)(T_FormalArg, T_FormalArgs...), T_ActualArg&& arg, T_ActualArgs&&... args) {
+  static inline void push_parameters(char* stack_pointer, T_Ret(*)(T_FormalArg, T_FormalArgs...), T_ActualArg&& arg, T_ActualArgs&&... args) {
     T_FormalArg arg_conv = arg;
     auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
     uint64_t val = serialize_to_uint64(arg_conv);
@@ -597,8 +597,8 @@ private:
         sandbox_current_thread_sbx_ctx->r9 = val;
       } else {
         #ifndef RLBOX_ZEROCOST_NOSWITCHSTACK
-          stack_pointer -= sizeof(val);
           memcpy(stack_pointer, &val, sizeof(val));
+          stack_pointer += sizeof(val);
         #endif
       }
 
@@ -624,8 +624,8 @@ private:
         sandbox_current_thread_sbx_ctx->xmm7 = val;
       } else {
         #ifndef RLBOX_ZEROCOST_NOSWITCHSTACK
-          stack_pointer -= sizeof(val);
           memcpy(stack_pointer, &val, sizeof(val));
+          stack_pointer += sizeof(val);
         #endif
       }
 
@@ -961,7 +961,8 @@ protected:
       char* prev_sandbox_stack_pointer = curr_sandbox_stack_pointer;
       // keep stack 16 byte aligned
       const auto stack_param_size = get_stack_param_size<0, 0>(func_ptr_conv);
-      const auto stack_correction = (16 - (stack_param_size % 16)) % 16;
+      curr_sandbox_stack_pointer -= stack_param_size;
+      const auto stack_correction = (16 - (reinterpret_cast<uintptr_t>(curr_sandbox_stack_pointer) % 16)) % 16;
       curr_sandbox_stack_pointer -= stack_correction;
     #else
       char* curr_sandbox_stack_pointer = nullptr; // dummy
