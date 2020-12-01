@@ -392,7 +392,7 @@ private:
     #endif
 
     auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
-    sandbox_current_thread_sbx_ctx->rip = get_return_target();
+    sandbox_current_thread_sbx_ctx->rip = reinterpret_cast<uint64_t>(__builtin_extract_return_addr (__builtin_return_address (0)));
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
 
     #ifndef RLBOX_ZEROCOST_NOSWITCHSTACK
@@ -415,19 +415,19 @@ private:
     if constexpr (std::is_void_v<T_Ret>) {
       func(thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
       #ifndef RLBOX_ZEROCOST_NOSWITCHSTACK
-        set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
+        set_return_target(reinterpret_cast<uint64_t>(__builtin_frame_address(0)), reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
         thread_data.sandbox->curr_sandbox_stack_pointer = prev_sbx_stack;
       #else
-        set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback_noswitchstack));
+        set_return_target(reinterpret_cast<uint64_t>(__builtin_frame_address(0)), reinterpret_cast<uint64_t>(context_switch_to_sbx_callback_noswitchstack));
       #endif
     } else {
       auto ret = func(thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
       push_return(ret);
       #ifndef RLBOX_ZEROCOST_NOSWITCHSTACK
-        set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
+        set_return_target(reinterpret_cast<uint64_t>(__builtin_frame_address(0)), reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
         thread_data.sandbox->curr_sandbox_stack_pointer = prev_sbx_stack;
       #else
-        set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback_noswitchstack));
+        set_return_target(reinterpret_cast<uint64_t>(__builtin_frame_address(0)), reinterpret_cast<uint64_t>(context_switch_to_sbx_callback_noswitchstack));
       #endif
       return ret;
     }
@@ -441,14 +441,22 @@ private:
   {
     #ifndef RLBOX_ZEROCOST_NOSWITCHSTACK
       auto& sandbox_current_thread_app_ctx = *get_sandbox_current_thread_app_ctx();
-      const auto stack_param_size = get_stack_param_size<0, 0>(callback_interceptor_promoted<N, T_Ret, T_Args...>);
+      const auto stack_param_size = get_stack_param_size<0, 0>(callback_interceptor<N, T_Ret, T_Args...>);
       const auto stack_param_ret_size = stack_param_size + sizeof(uintptr_t) + 16;
-      switch_to_target_stack(sandbox_current_thread_app_ctx->rsp, stack_param_ret_size);
+      const auto curr_sbx_stack = save_sbx_stack_and_switch_to_app_stack(sandbox_current_thread_app_ctx->rsp, stack_param_ret_size);
     #endif
 
     auto& sandbox_current_thread_sbx_ctx = *get_sandbox_current_thread_sbx_ctx();
-    sandbox_current_thread_sbx_ctx->rip = get_return_target();
+    sandbox_current_thread_sbx_ctx->rip = reinterpret_cast<uint64_t>(__builtin_extract_return_addr (__builtin_return_address (0)));
     auto& thread_data = *get_rlbox_lucet_sandbox_thread_data();
+
+    #ifndef RLBOX_ZEROCOST_NOSWITCHSTACK
+      const auto prev_sbx_stack = thread_data.sandbox->curr_sandbox_stack_pointer;
+      thread_data.sandbox->curr_sandbox_stack_pointer = (char*) curr_sbx_stack;
+      // keep stack 16 byte aligned
+      thread_data.sandbox->curr_sandbox_stack_pointer -= (reinterpret_cast<uintptr_t>(thread_data.sandbox->curr_sandbox_stack_pointer) % 16);
+    #endif
+
     thread_data.last_callback_invoked = N;
     using T_Func = T_Ret (*)(T_Args...);
     T_Func func;
@@ -468,9 +476,10 @@ private:
     push_return(ret_ptr);
 
     #ifndef RLBOX_ZEROCOST_NOSWITCHSTACK
-      set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
+      set_return_target(reinterpret_cast<uint64_t>(__builtin_frame_address(0)), reinterpret_cast<uint64_t>(context_switch_to_sbx_callback));
+      thread_data.sandbox->curr_sandbox_stack_pointer = prev_sbx_stack;
     #else
-      set_return_target(reinterpret_cast<uint64_t>(context_switch_to_sbx_callback_noswitchstack));
+      set_return_target(reinterpret_cast<uint64_t>(__builtin_frame_address(0)), reinterpret_cast<uint64_t>(context_switch_to_sbx_callback_noswitchstack));
     #endif
   }
 
