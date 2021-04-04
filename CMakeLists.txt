@@ -10,6 +10,10 @@ project(rlbox_lucet
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+SET(ASM_OPTIONS "-x assembler-with-cpp")
+enable_language(C CXX ASM)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-stack-protector")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-stack-protector")
 
 option(DEV "Use settings suitable for dev contributions to rlbox" OFF)
 
@@ -42,7 +46,7 @@ if(DEV)
     add_compile_options(/WX) # warnings as errors
   else()
     add_compile_options(-Wall -Wextra -pedantic) # warnings
-    add_compile_options(-Werror) # warnings as errors
+    # add_compile_options(-Werror) # warnings as errors
     add_compile_options(-fsanitize=address)
     add_link_options(-fsanitize=address)
     add_compile_options(-fsanitize=undefined)
@@ -81,7 +85,8 @@ include(FetchContent)
 
 FetchContent_Declare(
   rlbox
-  GIT_REPOSITORY https://github.com/PLSysSec/rlbox_api_cpp17.git)
+  GIT_REPOSITORY https://github.com/PLSysSec/rlbox_api_cpp17.git
+  GIT_TAG origin/gettimeofday)
 FetchContent_GetProperties(rlbox)
 if(NOT rlbox_POPULATED)
   FetchContent_Populate(rlbox)
@@ -232,8 +237,11 @@ add_custom_target(glue_lib_wasm ALL DEPENDS lucet_release ${GLUE_LIB_WASM} ${GLU
 
 add_executable(test_rlbox_glue test/test_lucet_sandbox_glue_main.cpp
                                test/test_lucet_sandbox_glue.cpp
-                               test/test_lucet_sandbox_glue_preload.cpp
-                               test/test_lucet_sandbox_glue_embedder_vars.cpp)
+                              #  test/test_lucet_sandbox_glue_preload.cpp
+                              #  test/test_lucet_sandbox_glue_embedder_vars.cpp
+                              c_src/trampoline_c_new.cpp
+                              c_src/trampoline_asm_64.S
+                              )
 target_include_directories(test_rlbox_glue PUBLIC include)
 target_include_directories(test_rlbox_glue
                            PUBLIC ${rlbox_SOURCE_DIR}/code/include)

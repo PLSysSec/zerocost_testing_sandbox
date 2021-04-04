@@ -1,6 +1,8 @@
 #pragma once
 
 #include "lucet_sandbox.h"
+#include "ctx_save_trampoline_new.hpp"
+
 
 #include <cstdint>
 #include <iostream>
@@ -241,6 +243,8 @@ private:
   void* free_index = 0;
   size_t return_slot_size = 0;
   T_PointerType return_slot = 0;
+
+  heavy_trampoline trampoline;
 
   static const size_t MAX_CALLBACKS = 128;
   RLBOX_SHARED_LOCK(callback_mutex);
@@ -494,6 +498,8 @@ protected:
     detail::dynamic_check((heap_base & heap_offset_mask) == 0,
                           "Sandbox heap not aligned to 4GB");
 
+    trampoline.init(true);
+
     // cache these for performance
     malloc_index = impl_lookup_symbol("malloc");
     free_index = impl_lookup_symbol("free");
@@ -511,6 +517,7 @@ protected:
   }
 
   inline void impl_destroy_sandbox() {
+    trampoline.destroy();
     if (return_slot_size) {
       impl_free_in_sandbox(return_slot);
     }
@@ -745,9 +752,11 @@ protected:
 
     if constexpr (std::is_void_v<T_Ret>) {
       RLBOX_LUCET_UNUSED(ret);
-      func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      // func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      trampoline.func_call<T_Ret>(func_ptr_conv, heap_base, serialize_class_arg(params)...);
     } else {
-      ret = func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      // ret = func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      ret = trampoline.func_call<T_Ret>(func_ptr_conv, heap_base, serialize_class_arg(params)...);
     }
 
     for (size_t i = 0; i < alloc_length; i++) {
