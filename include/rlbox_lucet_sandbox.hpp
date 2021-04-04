@@ -1,6 +1,8 @@
 #pragma once
 
 #include "lucet_sandbox.h"
+#include "ctx_save_trampoline.hpp"
+
 
 #include <cstdint>
 #include <iostream>
@@ -242,6 +244,8 @@ private:
   size_t return_slot_size = 0;
   T_PointerType return_slot = 0;
 
+  heavy_trampoline trampoline;
+
   static const size_t MAX_CALLBACKS = 128;
   RLBOX_SHARED_LOCK(callback_mutex);
   void* callback_unique_keys[MAX_CALLBACKS]{ 0 };
@@ -391,7 +395,7 @@ private:
     // Callbacks are invoked through function pointers, cannot use std::forward
     // as we don't have caller context for T_Args, which means they are all
     // effectively passed by value
-    return func(thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
+    return thread_data.sandbox->trampoline.func_call(func, thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
   }
 
   template<uint32_t N, typename T_Ret, typename... T_Args>
@@ -413,8 +417,8 @@ private:
     // Callbacks are invoked through function pointers, cannot use std::forward
     // as we don't have caller context for T_Args, which means they are all
     // effectively passed by value
-    auto ret_val =
-      func(thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
+    auto ret_val = 
+      thread_data.sandbox->trampoline.func_call(func, thread_data.sandbox->serialize_to_sandbox<T_Args>(params)...);
     // Copy the return value back
     auto ret_ptr = reinterpret_cast<T_Ret*>(
       thread_data.sandbox->template impl_get_unsandboxed_pointer<T_Ret*>(ret));
@@ -494,6 +498,8 @@ protected:
     detail::dynamic_check((heap_base & heap_offset_mask) == 0,
                           "Sandbox heap not aligned to 4GB");
 
+    trampoline.init(true);
+
     // cache these for performance
     malloc_index = impl_lookup_symbol("malloc");
     free_index = impl_lookup_symbol("free");
@@ -511,6 +517,7 @@ protected:
   }
 
   inline void impl_destroy_sandbox() {
+    trampoline.destroy();
     if (return_slot_size) {
       impl_free_in_sandbox(return_slot);
     }
@@ -745,9 +752,11 @@ protected:
 
     if constexpr (std::is_void_v<T_Ret>) {
       RLBOX_LUCET_UNUSED(ret);
-      func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      // func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      trampoline.func_call(func_ptr_conv, heap_base, serialize_class_arg(params)...);
     } else {
-      ret = func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      // ret = func_ptr_conv(heap_base, serialize_class_arg(params)...);
+      ret = trampoline.func_call(func_ptr_conv, heap_base, serialize_class_arg(params)...);
     }
 
     for (size_t i = 0; i < alloc_length; i++) {
