@@ -37,6 +37,20 @@ _switch_execution_context:
         movq    %r13, TRANSITION_CONTEXT_OFFSET_R13(REG_PARAM)
         movq    %r14, TRANSITION_CONTEXT_OFFSET_R14(REG_PARAM)
         movq    %r15, TRANSITION_CONTEXT_OFFSET_R15(REG_PARAM)
+        cmpq    $0, TRANSITION_CONTEXT_OFFSET_WINDOWS_MODE_ABI(REG_PARAM)
+        je      switch_execution_context_non_windows
+        // Callee save registers on windows
+        movsd   %xmm6 , TRANSITION_CONTEXT_OFFSET_XMM6(REG_PARAM)
+        movsd   %xmm7 , TRANSITION_CONTEXT_OFFSET_XMM7(REG_PARAM)
+        movsd   %xmm8 , TRANSITION_CONTEXT_OFFSET_XMM8(REG_PARAM)
+        movsd   %xmm9 , TRANSITION_CONTEXT_OFFSET_XMM9(REG_PARAM)
+        movsd   %xmm10, TRANSITION_CONTEXT_OFFSET_XMM10(REG_PARAM)
+        movsd   %xmm11, TRANSITION_CONTEXT_OFFSET_XMM11(REG_PARAM)
+        movsd   %xmm12, TRANSITION_CONTEXT_OFFSET_XMM12(REG_PARAM)
+        movsd   %xmm13, TRANSITION_CONTEXT_OFFSET_XMM13(REG_PARAM)
+        movsd   %xmm14, TRANSITION_CONTEXT_OFFSET_XMM14(REG_PARAM)
+        movsd   %xmm15, TRANSITION_CONTEXT_OFFSET_XMM15(REG_PARAM)
+switch_execution_context_non_windows:
         // Floating point control word and mxcsr are partially callee saved --- just save the whole thing
         fnstcw  TRANSITION_CONTEXT_OFFSET_SOURCE_FCW(REG_PARAM)
         stmxcsr TRANSITION_CONTEXT_OFFSET_SOURCE_MXCSR(REG_PARAM)
@@ -65,7 +79,7 @@ _switch_execution_context:
         andq    $-16, REG_TMP_STACK_FRAME
         movq    TRANSITION_CONTEXT_OFFSET_STACK_PARAMS_SIZE(REG_PARAM), REG_TMP_LOAD
         testq   REG_TMP_LOAD, REG_TMP_LOAD
-        je      switch_execution_context_continue
+        je      switch_execution_context_only_reg_params
 
         // Copy the parameters
         movq    REG_TMP_LOAD, %rcx
@@ -75,7 +89,7 @@ _switch_execution_context:
         movq    REG_TMP_STACK_FRAME, %rdi
         rep movsb
 
-switch_execution_context_continue:
+switch_execution_context_only_reg_params:
 
         // Load the stack pointer of the context_to
         movq    REG_TMP_STACK_FRAME, %rsp
@@ -189,6 +203,20 @@ switch_execution_context_continue:
         movq    TRANSITION_CONTEXT_OFFSET_R13(REG_PARAM), %r13
         movq    TRANSITION_CONTEXT_OFFSET_R14(REG_PARAM), %r14
         movq    TRANSITION_CONTEXT_OFFSET_R15(REG_PARAM), %r15
+        cmpq    $0, TRANSITION_CONTEXT_OFFSET_WINDOWS_MODE_ABI(REG_PARAM)
+        je      switch_execution_context_out_non_windows
+        // Callee save registers on windows
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM6(REG_PARAM) , %xmm6
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM7(REG_PARAM) , %xmm7
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM8(REG_PARAM) , %xmm8
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM9(REG_PARAM) , %xmm9
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM10(REG_PARAM), %xmm10
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM11(REG_PARAM), %xmm11
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM12(REG_PARAM), %xmm12
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM13(REG_PARAM), %xmm13
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM14(REG_PARAM), %xmm14
+        movsd   TRANSITION_CONTEXT_OFFSET_XMM15(REG_PARAM), %xmm15
+switch_execution_context_out_non_windows:
         // Restore fp control word which is callee save
         fldcw   TRANSITION_CONTEXT_OFFSET_SOURCE_FCW(REG_PARAM)
         ldmxcsr TRANSITION_CONTEXT_OFFSET_SOURCE_MXCSR(REG_PARAM)

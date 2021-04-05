@@ -138,14 +138,17 @@ private:
   }
 
   bool m_switch_stacks;
+  bool m_windows_mode;
   char* sandbox_stack_pointer = 0;
   char* curr_sandbox_stack_pointer = 0;
   char* parameter_buffer = 0;
 
 public:
-  void init(bool switch_stacks)
+  void init(bool switch_stacks, bool windows_mode)
   {
     m_switch_stacks = switch_stacks;
+    m_windows_mode = windows_mode;
+
     if (m_switch_stacks) {
       // allocate a 16M sandbox stack by default
       const uint64_t stack_size = 16 * 1024 * 1024;
@@ -197,15 +200,19 @@ public:
       }
     }
 
+    if (m_windows_mode) {
+      transition_in.windows_mode_abi = 1;
+    }
+
     auto stack_param_size = push_parameters<0, 0>(
-      saved_transition_context, parameter_buffer, /* init_stack_param_size */ 0, fn_ptr, std::forward<T_ActualArgs>(args)...);
+      &transition_in, parameter_buffer, /* init_stack_param_size */ 0, fn_ptr, std::forward<T_ActualArgs>(args)...);
 
     transition_in.target_stack_ptr = (uintptr_t)stack_pointer;
     transition_in.stack_params_buffer = parameter_buffer;
     transition_in.stack_params_size = stack_param_size;
     transition_in.target_prog_ctr = (uintptr_t)fn_ptr;
 
-    switch_execution_context(saved_transition_context);
+    switch_execution_context(&transition_in);
     saved_transition_context = prev_transition_context;
 
     if constexpr (std::is_same_v<T_Ret, float> ||

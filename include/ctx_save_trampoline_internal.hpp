@@ -42,7 +42,8 @@
 #define TRANSITION_CONTEXT_OFFSET_TARGET_FCW 0x138
 #define TRANSITION_CONTEXT_OFFSET_STACK_PARAMS_SIZE 0x140
 #define TRANSITION_CONTEXT_OFFSET_STACK_PARAMS_BUFFER 0x148
-#define TRANSITION_CONTEXT_TOTAL_SIZE 0x150
+#define TRANSITION_CONTEXT_OFFSET_WINDOWS_MODE_ABI 0x150
+#define TRANSITION_CONTEXT_TOTAL_SIZE 0x158
 
 #if !defined(__ASSEMBLER__)
 
@@ -73,7 +74,9 @@
         uint64_t    stack_params_size;
         /*          0x148              */
         void*       stack_params_buffer;
-        /* end:     0x150 */
+        /*          0x150 */
+        uint64_t    windows_mode_abi;
+        /* end:     0x158 */
     } TransitionContext;
 
     TransitionContext* get_saved_transition_context();
@@ -129,6 +132,7 @@
     NACL_CHECK_FIELD(TRANSITION_CONTEXT_OFFSET_TARGET_FCW, target_fcw);
     NACL_CHECK_FIELD(TRANSITION_CONTEXT_OFFSET_STACK_PARAMS_SIZE, stack_params_size);
     NACL_CHECK_FIELD(TRANSITION_CONTEXT_OFFSET_STACK_PARAMS_BUFFER, stack_params_buffer);
+    NACL_CHECK_FIELD(TRANSITION_CONTEXT_OFFSET_WINDOWS_MODE_ABI, windows_mode_abi);
     static_assert(TRANSITION_CONTEXT_TOTAL_SIZE == sizeof(TransitionContext));
 
     #undef NACL_CHECK_FIELD

@@ -499,10 +499,18 @@ protected:
                           "Sandbox heap not aligned to 4GB");
 
     #ifdef RLBOX_ZEROCOST_NOSWITCHSTACK
-    trampoline.init(/* switch_stacks */ false);
+      const bool should_switch_stacks = false;
     #else
-    trampoline.init(/* switch_stacks */ true);
+      const bool should_switch_stacks = true;
     #endif
+
+    #ifdef RLBOX_ZEROCOST_WINDOWSMODE
+      const bool should_use_windows_mode = true;
+    #else
+      const bool should_use_windows_mode = false;
+    #endif
+
+    trampoline.init(should_switch_stacks, should_use_windows_mode);
 
     // cache these for performance
     malloc_index = impl_lookup_symbol("malloc");

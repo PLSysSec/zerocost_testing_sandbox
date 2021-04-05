@@ -314,7 +314,43 @@ if(UNIX AND NOT (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
 endif()
 catch_discover_tests(test_rlbox_glue_noswitchstack)
 
+#################################
+
+add_executable(test_rlbox_glue_windowsmode test/test_lucet_sandbox_glue_main.cpp
+                               test/test_lucet_sandbox_glue.cpp
+                               test/test_lucet_sandbox_glue_preload.cpp
+                               test/test_lucet_sandbox_glue_embedder_vars.cpp
+                              c_src/trampoline_src.cpp
+                              c_src/trampoline_asm_64.S
+                              )
+target_include_directories(test_rlbox_glue_windowsmode PUBLIC include)
+target_include_directories(test_rlbox_glue_windowsmode
+                           PUBLIC ${rlbox_SOURCE_DIR}/code/include)
+target_include_directories(test_rlbox_glue_windowsmode
+                           PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue)
+target_include_directories(test_rlbox_glue_windowsmode
+                           PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue/lib)
+
+target_compile_definitions(test_rlbox_glue_windowsmode PUBLIC
+                           GLUE_LIB_LUCET_PATH="${GLUE_LIB_SO}"
+                           RLBOX_ZEROCOST_WINDOWSMODE)
+
+add_dependencies(test_rlbox_glue_windowsmode lucet_sandbox_rustlib_debug lucet_sandbox_rustlib_release)
+
+target_link_libraries(test_rlbox_glue_windowsmode
+                      Catch2::Catch2
+                      ${LINK_LUCET_LIB}
+                      ${CMAKE_THREAD_LIBS_INIT}
+                      ${CMAKE_DL_LIBS}
+                      # glue_lib_lucet
+                      )
+
+if(UNIX AND NOT (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
+  target_link_libraries(test_rlbox_glue_windowsmode rt)
+endif()
+catch_discover_tests(test_rlbox_glue_windowsmode)
+
 # Shortcuts ###################
 
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} -V)
-add_dependencies(check test_rlbox_glue test_rlbox_glue_noswitchstack glue_lib_wasm)
+add_dependencies(check test_rlbox_glue test_rlbox_glue_noswitchstack test_rlbox_glue_windowsmode glue_lib_wasm)
