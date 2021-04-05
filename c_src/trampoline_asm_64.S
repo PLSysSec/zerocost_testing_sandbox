@@ -46,6 +46,15 @@ _switch_execution_context:
 
         /* Stage 2: Load relevant context_to state */
 
+        // stack_ptr = target_stack
+        // if (!stack_ptr) {
+        //     // dont switch stacks
+        //     stack_ptr = $rsp;
+        // }
+        movq    TRANSITION_CONTEXT_OFFSET_TARGET_STACK_PTR(REG_PARAM), REG_TMP_STACK_FRAME
+        test    REG_TMP_STACK_FRAME, REG_TMP_STACK_FRAME
+        cmovz   %rsp, REG_TMP_STACK_FRAME
+
         // Copy the stack parameters to the target stack frame
         // if parameters_size > 0 {
         //    stack_ptr -= parameters_size
@@ -53,7 +62,6 @@ _switch_execution_context:
         //    stack_ptr -= (stack_ptr % 16);
         //    memcpy(stack_ptr, parameters_buff, parameters_size)
         // }
-        movq    TRANSITION_CONTEXT_OFFSET_TARGET_STACK_PTR(REG_PARAM), REG_TMP_STACK_FRAME
         andq    $-16, REG_TMP_STACK_FRAME
         movq    TRANSITION_CONTEXT_OFFSET_STACK_PARAMS_SIZE(REG_PARAM), REG_TMP_LOAD
         testq   REG_TMP_LOAD, REG_TMP_LOAD

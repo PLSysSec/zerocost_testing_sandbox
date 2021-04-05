@@ -235,6 +235,16 @@ add_custom_command(OUTPUT ${GLUE_LIB_WASM} ${GLUE_LIB_SO}
 
 add_custom_target(glue_lib_wasm ALL DEPENDS lucet_release ${GLUE_LIB_WASM} ${GLUE_LIB_SO})
 
+find_package(Threads REQUIRED)
+
+if(MSVC)
+  set(LINK_LUCET_LIB -WHOLEARCHIVE lucet_sandbox_rustlib)
+else()
+  set(LINK_LUCET_LIB -Wl,--whole-archive lucet_sandbox_rustlib -Wl,--no-whole-archive)
+endif()
+
+# Executables ###################
+
 add_executable(test_rlbox_glue test/test_lucet_sandbox_glue_main.cpp
                                test/test_lucet_sandbox_glue.cpp
                                test/test_lucet_sandbox_glue_preload.cpp
@@ -250,18 +260,10 @@ target_include_directories(test_rlbox_glue
 target_include_directories(test_rlbox_glue
                            PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue/lib)
 
-find_package(Threads REQUIRED)
-
 target_compile_definitions(test_rlbox_glue PUBLIC
                            GLUE_LIB_LUCET_PATH="${GLUE_LIB_SO}")
 
 add_dependencies(test_rlbox_glue lucet_sandbox_rustlib_debug lucet_sandbox_rustlib_release)
-
-if(MSVC)
-  set(LINK_LUCET_LIB -WHOLEARCHIVE lucet_sandbox_rustlib)
-else()
-  set(LINK_LUCET_LIB -Wl,--whole-archive lucet_sandbox_rustlib -Wl,--no-whole-archive)
-endif()
 
 target_link_libraries(test_rlbox_glue
                       Catch2::Catch2
@@ -276,8 +278,43 @@ if(UNIX AND NOT (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
 endif()
 catch_discover_tests(test_rlbox_glue)
 
+#################################
+
+add_executable(test_rlbox_glue_noswitchstack test/test_lucet_sandbox_glue_main.cpp
+                               test/test_lucet_sandbox_glue.cpp
+                               test/test_lucet_sandbox_glue_preload.cpp
+                               test/test_lucet_sandbox_glue_embedder_vars.cpp
+                              c_src/trampoline_src.cpp
+                              c_src/trampoline_asm_64.S
+                              )
+target_include_directories(test_rlbox_glue_noswitchstack PUBLIC include)
+target_include_directories(test_rlbox_glue_noswitchstack
+                           PUBLIC ${rlbox_SOURCE_DIR}/code/include)
+target_include_directories(test_rlbox_glue_noswitchstack
+                           PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue)
+target_include_directories(test_rlbox_glue_noswitchstack
+                           PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue/lib)
+
+target_compile_definitions(test_rlbox_glue_noswitchstack PUBLIC
+                           GLUE_LIB_LUCET_PATH="${GLUE_LIB_SO}"
+                           RLBOX_ZEROCOST_NOSWITCHSTACK)
+
+add_dependencies(test_rlbox_glue_noswitchstack lucet_sandbox_rustlib_debug lucet_sandbox_rustlib_release)
+
+target_link_libraries(test_rlbox_glue_noswitchstack
+                      Catch2::Catch2
+                      ${LINK_LUCET_LIB}
+                      ${CMAKE_THREAD_LIBS_INIT}
+                      ${CMAKE_DL_LIBS}
+                      # glue_lib_lucet
+                      )
+
+if(UNIX AND NOT (${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
+  target_link_libraries(test_rlbox_glue_noswitchstack rt)
+endif()
+catch_discover_tests(test_rlbox_glue_noswitchstack)
+
 # Shortcuts ###################
 
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} -V)
-add_dependencies(check test_rlbox_glue glue_lib_wasm)
-
+add_dependencies(check test_rlbox_glue test_rlbox_glue_noswitchstack glue_lib_wasm)
