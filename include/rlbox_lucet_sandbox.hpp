@@ -498,7 +498,11 @@ protected:
     detail::dynamic_check((heap_base & heap_offset_mask) == 0,
                           "Sandbox heap not aligned to 4GB");
 
-    trampoline.init(true);
+    #ifdef RLBOX_ZEROCOST_NOSWITCHSTACK
+    trampoline.init(/* switch_stacks */ false);
+    #else
+    trampoline.init(/* switch_stacks */ true);
+    #endif
 
     // cache these for performance
     malloc_index = impl_lookup_symbol("malloc");
@@ -517,10 +521,10 @@ protected:
   }
 
   inline void impl_destroy_sandbox() {
-    trampoline.destroy();
     if (return_slot_size) {
       impl_free_in_sandbox(return_slot);
     }
+    trampoline.destroy();
     lucet_drop_module(sandbox);
   }
 

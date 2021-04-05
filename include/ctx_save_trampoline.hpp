@@ -26,9 +26,6 @@ class heavy_trampoline
 {
 
 private:
-  bool m_switch_stacks;
-  char* sandbox_stack_pointer = 0;
-  char* curr_sandbox_stack_pointer = 0;
 
   template<typename T_Arg>
   static inline uint64_t serialize_to_uint64(T_Arg arg)
@@ -49,49 +46,13 @@ private:
   }
 
   template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret>
-  static inline size_t get_stack_param_size(T_Ret (*)())
-  {
-    return 0;
-  }
-
-  template<size_t T_IntegerNum,
-           size_t T_FloatNum,
-           typename T_Ret,
-           typename T_FormalArg,
-           typename... T_FormalArgs>
-  static inline size_t get_stack_param_size(T_Ret (*)(T_FormalArg,
-                                                      T_FormalArgs...))
-  {
-    size_t curr_val = 0;
-
-    if constexpr (std::is_integral_v<T_FormalArg> ||
-                  std::is_pointer_v<T_FormalArg> ||
-                  std::is_reference_v<T_FormalArg> ||
-                  std::is_enum_v<T_FormalArg>) {
-      if constexpr (T_IntegerNum > 5) {
-        curr_val = 8;
-      }
-      auto ret = curr_val + get_stack_param_size<T_IntegerNum + 1, T_FloatNum>(
-                              reinterpret_cast<T_Ret (*)(T_FormalArgs...)>(0));
-      return ret;
-    } else if constexpr (std::is_same_v<T_FormalArg, float> ||
-                         std::is_same_v<T_FormalArg, double>) {
-      if constexpr (T_FloatNum > 7) {
-        curr_val = 8;
-      }
-      auto ret = curr_val + get_stack_param_size<T_IntegerNum, T_FloatNum + 1>(
-                              reinterpret_cast<T_Ret (*)(T_FormalArgs...)>(0));
-      return ret;
-    } else {
-      static_assert(switch_execution_detail::false_v<T_Ret>, "Unknown case");
-    }
-  }
-
-  template<size_t T_IntegerNum, size_t T_FloatNum, typename T_Ret>
-  static inline void push_parameters(TransitionContext* ctx,
-                                     char* stack_pointer,
+  static inline size_t push_parameters(TransitionContext* ctx,
+                                     char* target_buffer,
+                                     size_t target_buffer_used_size,
                                      T_Ret (*)())
-  {}
+  {
+    return target_buffer_used_size;
+  }
 
   template<size_t T_IntegerNum,
            size_t T_FloatNum,
@@ -100,8 +61,9 @@ private:
            typename... T_FormalArgs,
            typename T_ActualArg,
            typename... T_ActualArgs>
-  static inline void push_parameters(TransitionContext* ctx,
-                                     char* stack_pointer,
+  static inline size_t push_parameters(TransitionContext* ctx,
+                                     char* target_buffer,
+                                     size_t target_buffer_used_size,
                                      T_Ret (*)(T_FormalArg, T_FormalArgs...),
                                      T_ActualArg&& arg,
                                      T_ActualArgs&&... args)
@@ -127,13 +89,15 @@ private:
       } else if constexpr (T_IntegerNum == 5) {
         ctx->r9 = val;
       } else {
-        memcpy(stack_pointer, &val, sizeof(val));
-        stack_pointer += sizeof(val);
+        memcpy(target_buffer, &val, sizeof(val));
+        target_buffer += sizeof(val);
+        target_buffer_used_size += sizeof(val);
       }
 
-      push_parameters<T_IntegerNum + 1, T_FloatNum>(
+      return push_parameters<T_IntegerNum + 1, T_FloatNum>(
         ctx,
-        stack_pointer,
+        target_buffer,
+        target_buffer_used_size,
         reinterpret_cast<T_Ret (*)(T_FormalArgs...)>(0),
         std::forward<T_ActualArgs>(args)...);
 
@@ -157,19 +121,26 @@ private:
       } else if constexpr (T_FloatNum == 7) {
         ctx->xmm7 = val;
       } else {
-        memcpy(stack_pointer, &val, sizeof(val));
-        stack_pointer += sizeof(val);
+        memcpy(target_buffer, &val, sizeof(val));
+        target_buffer += sizeof(val);
+        target_buffer_used_size += sizeof(val);
       }
 
-      push_parameters<T_IntegerNum, T_FloatNum + 1>(
+      return push_parameters<T_IntegerNum, T_FloatNum + 1>(
         ctx,
-        stack_pointer,
+        target_buffer,
+        target_buffer_used_size,
         reinterpret_cast<T_Ret (*)(T_FormalArgs...)>(0),
         std::forward<T_ActualArgs>(args)...);
     } else {
       static_assert(switch_execution_detail::false_v<T_Ret>, "Unknown case");
     }
   }
+
+  bool m_switch_stacks;
+  char* sandbox_stack_pointer = 0;
+  char* curr_sandbox_stack_pointer = 0;
+  char* parameter_buffer = 0;
 
 public:
   void init(bool switch_stacks)
@@ -188,9 +159,24 @@ public:
       curr_sandbox_stack_pointer -=
         (reinterpret_cast<uintptr_t>(curr_sandbox_stack_pointer) % 16);
     }
+    // picking a parameter buffer of 4k arbitrarily. This should be sufficiently large for most things
+    const uint64_t parameter_buffer_size = 16 * 1024 * 1024;
+    parameter_buffer = new char[parameter_buffer_size];
+    if (parameter_buffer == nullptr) {
+      printf("Could not allocate parameter_buffer\n");
+      abort();
+    }
   }
 
-  void destroy() { delete[] sandbox_stack_pointer; }
+  void destroy()
+  {
+    if (sandbox_stack_pointer != nullptr) {
+      delete[] sandbox_stack_pointer;
+    }
+    if (parameter_buffer != nullptr) {
+      delete[] parameter_buffer;
+    }
+  }
 
   template<typename T_Ret, typename... T_FormalArgs, typename... T_ActualArgs>
   inline T_Ret func_call(T_Ret (*fn_ptr)(T_FormalArgs...), T_ActualArgs&&... args)
@@ -199,25 +185,24 @@ public:
     TransitionContext transition_in = {};
 
     TransitionContext* prev_transition_context = saved_transition_context;
-    if (prev_transition_context != nullptr) {
-        stack_pointer = (char*) prev_transition_context->source_stack_ptr;
-        // keep stack 16 byte aligned
-        stack_pointer -= (reinterpret_cast<uintptr_t>(stack_pointer) % 16);
-    } else {
-        stack_pointer = curr_sandbox_stack_pointer;
-    }
     saved_transition_context = &transition_in;
 
-    const auto stack_param_size = get_stack_param_size<0, 0>(fn_ptr);
-    stack_pointer -= stack_param_size;
-    // keep stack 16 byte aligned
-    stack_pointer -=
-      (reinterpret_cast<uintptr_t>(stack_pointer) % 16);
+    if (m_switch_stacks) {
+      if (prev_transition_context != nullptr) {
+          stack_pointer = (char*) prev_transition_context->source_stack_ptr;
+          // keep stack 16 byte aligned
+          stack_pointer -= (reinterpret_cast<uintptr_t>(stack_pointer) % 16);
+      } else {
+          stack_pointer = curr_sandbox_stack_pointer;
+      }
+    }
 
-    push_parameters<0, 0>(
-      saved_transition_context, stack_pointer, fn_ptr, std::forward<T_ActualArgs>(args)...);
+    auto stack_param_size = push_parameters<0, 0>(
+      saved_transition_context, parameter_buffer, /* init_stack_param_size */ 0, fn_ptr, std::forward<T_ActualArgs>(args)...);
 
     transition_in.target_stack_ptr = (uintptr_t)stack_pointer;
+    transition_in.stack_params_buffer = parameter_buffer;
+    transition_in.stack_params_size = stack_param_size;
     transition_in.target_prog_ctr = (uintptr_t)fn_ptr;
 
     switch_execution_context(saved_transition_context);
