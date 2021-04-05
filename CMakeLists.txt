@@ -92,6 +92,14 @@ if(NOT rlbox_POPULATED)
   FetchContent_Populate(rlbox)
 endif()
 
+FetchContent_Declare(
+  zerocost_heavy_trampoline
+  GIT_REPOSITORY git@github.com:PLSysSec/zerocost_heavy_trampoline.git)
+FetchContent_GetProperties(zerocost_heavy_trampoline)
+if(NOT zerocost_heavy_trampoline_POPULATED)
+  FetchContent_Populate(zerocost_heavy_trampoline)
+endif()
+
 FetchContent_Declare(catch2
                      GIT_REPOSITORY https://github.com/catchorg/Catch2.git
                      GIT_TAG v2.9.1)
@@ -249,8 +257,8 @@ add_executable(test_rlbox_glue test/test_lucet_sandbox_glue_main.cpp
                                test/test_lucet_sandbox_glue.cpp
                                test/test_lucet_sandbox_glue_preload.cpp
                                test/test_lucet_sandbox_glue_embedder_vars.cpp
-                              c_src/trampoline_src.cpp
-                              c_src/trampoline_asm_64.S
+                               ${zerocost_heavy_trampoline_SOURCE_DIR}/c_src/trampoline_src.cpp
+                               ${zerocost_heavy_trampoline_SOURCE_DIR}/c_src/trampoline_asm_64.S
                               )
 target_include_directories(test_rlbox_glue PUBLIC include)
 target_include_directories(test_rlbox_glue
@@ -259,6 +267,8 @@ target_include_directories(test_rlbox_glue
                            PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue)
 target_include_directories(test_rlbox_glue
                            PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue/lib)
+target_include_directories(test_rlbox_glue
+                           PUBLIC ${zerocost_heavy_trampoline_SOURCE_DIR}/include)
 
 target_compile_definitions(test_rlbox_glue PUBLIC
                            GLUE_LIB_LUCET_PATH="${GLUE_LIB_SO}")
@@ -284,8 +294,8 @@ add_executable(test_rlbox_glue_noswitchstack test/test_lucet_sandbox_glue_main.c
                                test/test_lucet_sandbox_glue.cpp
                                test/test_lucet_sandbox_glue_preload.cpp
                                test/test_lucet_sandbox_glue_embedder_vars.cpp
-                              c_src/trampoline_src.cpp
-                              c_src/trampoline_asm_64.S
+                               ${zerocost_heavy_trampoline_SOURCE_DIR}/c_src/trampoline_src.cpp
+                               ${zerocost_heavy_trampoline_SOURCE_DIR}/c_src/trampoline_asm_64.S
                               )
 target_include_directories(test_rlbox_glue_noswitchstack PUBLIC include)
 target_include_directories(test_rlbox_glue_noswitchstack
@@ -294,6 +304,8 @@ target_include_directories(test_rlbox_glue_noswitchstack
                            PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue)
 target_include_directories(test_rlbox_glue_noswitchstack
                            PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue/lib)
+target_include_directories(test_rlbox_glue_noswitchstack
+                           PUBLIC ${zerocost_heavy_trampoline_SOURCE_DIR}/include)
 
 target_compile_definitions(test_rlbox_glue_noswitchstack PUBLIC
                            GLUE_LIB_LUCET_PATH="${GLUE_LIB_SO}"
@@ -320,8 +332,8 @@ add_executable(test_rlbox_glue_windowsmode test/test_lucet_sandbox_glue_main.cpp
                                test/test_lucet_sandbox_glue.cpp
                                test/test_lucet_sandbox_glue_preload.cpp
                                test/test_lucet_sandbox_glue_embedder_vars.cpp
-                              c_src/trampoline_src.cpp
-                              c_src/trampoline_asm_64.S
+                               ${zerocost_heavy_trampoline_SOURCE_DIR}/c_src/trampoline_src.cpp
+                               ${zerocost_heavy_trampoline_SOURCE_DIR}/c_src/trampoline_asm_64.S
                               )
 target_include_directories(test_rlbox_glue_windowsmode PUBLIC include)
 target_include_directories(test_rlbox_glue_windowsmode
@@ -330,6 +342,8 @@ target_include_directories(test_rlbox_glue_windowsmode
                            PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue)
 target_include_directories(test_rlbox_glue_windowsmode
                            PUBLIC ${rlbox_SOURCE_DIR}/code/tests/rlbox_glue/lib)
+target_include_directories(test_rlbox_glue_windowsmode
+                           PUBLIC ${zerocost_heavy_trampoline_SOURCE_DIR}/include)
 
 target_compile_definitions(test_rlbox_glue_windowsmode PUBLIC
                            GLUE_LIB_LUCET_PATH="${GLUE_LIB_SO}"
