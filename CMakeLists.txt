@@ -92,14 +92,6 @@ if(NOT rlbox_POPULATED)
   FetchContent_Populate(rlbox)
 endif()
 
-FetchContent_Declare(
-  zerocost_heavy_trampoline
-  GIT_REPOSITORY git@github.com:PLSysSec/zerocost_heavy_trampoline.git)
-FetchContent_GetProperties(zerocost_heavy_trampoline)
-if(NOT zerocost_heavy_trampoline_POPULATED)
-  FetchContent_Populate(zerocost_heavy_trampoline)
-endif()
-
 FetchContent_Declare(catch2
                      GIT_REPOSITORY https://github.com/catchorg/Catch2.git
                      GIT_TAG v2.9.1)
@@ -137,6 +129,7 @@ if(NOT mod_lucet_POPULATED)
   FetchContent_Populate(mod_lucet)
 endif()
 
+set (zerocost_heavy_trampoline_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../zerocost_heavy_trampoline")
 # Rust Lib ###################
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
